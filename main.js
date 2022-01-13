@@ -172,7 +172,7 @@ function reloadProgram() {
     for (const type in lineVariants) {
       const variant = lineVariants[type];
       const match = variant.regex.exec(line);
-      if (!match) {
+      if (match === null) {
         continue;
       }
 
@@ -186,7 +186,7 @@ function reloadProgram() {
       }
 
       const op = match[1];
-      if (!variant.ops[op]) {
+      if (variant.ops[op] === undefined) {
         errors.push(`Uknown operator '${op}' of type '${type}' at line ${lineId}`)
         break;
       }
@@ -224,32 +224,42 @@ function reloadProgram() {
   }
 
   for (const lj of labelJumps) {
-    if (!labels[lj.label]) {
-      errors.push(`Unknown label '${match[3]}' at line ${lineId}`);
+    if (labels[lj.label] === undefined) {
+      errors.push(`Unknown label '${lj.label}' at line ${lj.lineId}`);
       continue;
     }
+    const diff = labels[lj.label] - lj.pos;
     program[lj.pos] = {
-      exec: () => lj.func(lj.rd, labels[lj.label]),
-      desc: `jal x${lj.rd}, ${labels[lj.label]} # ${lj.label}`
+      exec: () => lj.func(lj.rd, diff),
+      desc: `jal x${lj.rd}, ${diff} # ${lj.label}`
     };
   }
 
   if (errors.length == 0) {
-    console.log({ program });
+    compiledProgram.innerText = program.map(c => c.desc).join('\n');
   } else {
-    console.log({ errors });
+    compiledProgram.innerText = errors.join('\n');
   }
 }
 
 function stepOnce() {
-  program[state.programCounter++].exec();
+  if (program[state.programCounter]) {
+    program[state.programCounter++].exec();
+  } else {
+    state.isHalted = true;
+  }
   updateRegisters();
 }
 
 function runProgram() {
-  while (!state.isHalted) {
+  if (!state.isHalted) {
     stepOnce();
+    setTimeout(runProgram, 1);
   }
+}
+
+function stopProgram() {
+  state.isHalted = true;
 }
 
 function reloadAndRun() {
