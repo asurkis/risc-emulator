@@ -48,7 +48,7 @@ Branches:
 - bgeu imm, rs1, rs2
 
 Load:
-- lw reg_dst, rs1, imm
+- lw rd, rs1, imm
 
 Store:
 - sw rs1, rs2, imm
@@ -66,4 +66,6 @@ Division:
 - remu  rd, rs1, rs2
 
 Not from RISC-V:
-- hlt
+- ehalt
+- ewrite rs
+- eread  rd
