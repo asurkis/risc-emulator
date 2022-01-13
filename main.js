@@ -23,6 +23,10 @@ function setReg(addr, val) {
   }
 }
 
+function shiftPC(val) {
+  state.programCounter += val - 1;
+}
+
 const arithmetics = {
   add: (a, b) => a + b,
   sub: (a, b) => a - b,
@@ -43,6 +47,15 @@ const arithmetics = {
   // remu: (a, b) => a + b,
 };
 
+const branching = {
+  eq: (a, b) => a == b,
+  ne: (a, b) => a != b,
+  lt: (a, b) => a < b,
+  // ltu: (a, b) => { },
+  ge: (a, b) => a > b,
+  // geu: (a, b) => { },
+}
+
 const lineVariants = {
   R: {
     regex: /^\s*(\w+)\s+x(\d+),\s*x(\d+),\s*x(\d+)\s*(?:#.*)?/i,
@@ -58,35 +71,36 @@ const lineVariants = {
   I: {
     regex: /^\s*(\w+)\s+x(\d+),\s*x(\d+),\s*(-?\d+)\s*(?:#.*)?/i,
     ops: (() => {
-      const entries = [
-        'add',
-        'slt',
-        'and',
-        'or',
-        'xor',
-        'sll',
-        'srl',
-        'sra',
-      ].map(key => {
+      const entries = {};
+      const arithmetical = ['add', 'slt', 'and', 'or', 'xor', 'xll', 'xrl', 'sra'];
+      for (const key of arithmetical) {
         const fun = arithmetics[key];
-        return [
-          key + 'i',
-          (rd, rs1, imm) => {
-            const a = getReg(rs1);
-            setReg(rd, fun(a, imm));
+        entries[key + 'i'] = (rd, rs1, imm) => {
+          const a = getReg(rs1);
+          setReg(rd, fun(a, imm));
+        };
+      }
+
+      for (const branch in branching) {
+        const fun = branching[branch];
+        entries['b' + branch] = (rs1, rs2, imm) => {
+          const a = getReg(rs1);
+          const b = getReg(rs2);
+          if (fun(a, b)) {
+            shiftPC(imm);
           }
-        ]
-      });
-      entries.push(['jalr', (rd, rs1, imm) => {
+        };
+      }
+      entries['jalr'] = (rd, rs1, imm) => {
         const a = getReg(rs1);
         setReg(rd, state.programCounter);
-        state.programCounter += a + imm - 1;
-      }]);
-      entries.push(['lw', (rd, rs1, imm) => {
+        shiftPC(a + imm);
+      };
+      entries['lw'] = (rd, rs1, imm) => {
         const a = getReg(rs1);
-        setReg(rd, state.memory[rs1 + imm]);
-      }]);
-      return Object.fromEntries(entries);
+        setReg(rd, state.memory[a + imm]);
+      };
+      return entries;
     })()
   },
   S: {
@@ -107,28 +121,45 @@ const lineVariants = {
       // li: {},
       jal: (rd, imm) => {
         setReg(rd, state.programCounter);
-        state.programCounter += imm - 1;
+        shiftPC(imm);
       },
     }
   },
-  labelJump: {
-    regex: /^\s*(jal)\s+x(\d+),\s*([a-z]\w+)\s*(?:#.*)?/i,
+  'ILabel': {
+    regex: /^\s*(\w+)\s+x(\d+),\s*x(\d+),\s*([a-z]\w*)\s*(?:#.*)?/i,
+    ops: (() => {
+      const entries = {};
+      for (const branch in branching) {
+        const fun = branching[branch];
+        entries['b' + branch] = (rs1, rs2, imm) => {
+          const a = getReg(rs1);
+          const b = getReg(rs2);
+          if (fun(a, b)) {
+            shiftPC(imm);
+          }
+        };
+      }
+      return entries;
+    })()
+  },
+  'ULabel': {
+    regex: /^\s*(jal)\s+x(\d+),\s*([a-z]\w*)\s*(?:#.*)?/i,
     ops: {
       // lui: (rd, imm) => {},
       // auipc: {},
       // li: {},
       jal: (rd, imm) => {
         setReg(rd, state.programCounter);
-        state.programCounter += imm - 1;
+        shiftPC(imm);
       },
     }
   },
-  // env0: {
-  //   regex: /^\s*(\w+)\s*(?:#.*)?$/,
-  //   ops: {
-  //     ehalt: () => { state.isHalted = true; }
-  //   }
-  // },
+  env0: {
+    regex: /^\s*(\w+)\s*(?:#.*)?$/,
+    ops: {
+      ehalt: () => { state.isHalted = true; }
+    }
+  },
   // env1: {
   //   regex: /^\s*(\w+)\s+x(\d+)\s*(?:#.*)?$/,
   //   ops: {
@@ -212,7 +243,7 @@ function reloadProgram() {
           exec: () => func(+match[2], +match[3]),
           desc: `${match[1]} x${+match[2]}, ${+match[3]}`,
         });
-      } else if (type == 'labelJump') {
+      } else if (type == 'ULabel') {
         labelJumps.push({ pos: program.length, label: match[3], lineId, rd: match[2], func });
         program.push({});
       }
