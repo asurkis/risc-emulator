@@ -12,12 +12,17 @@ function clearOutput() {
 function reloadProgram() {
   state = {
     programCounter: 0,
+    registers: Array(32).fill(0),
     isHalted: false,
   };
-  program = [];
+
+  commands = [];
+  labels = [];
+  errors = [];
 
   for (const line of sourceCode.value.split('\n')) {
-    console.log(line);
+    const add = /^\s*add(\s+x\d+){3}\s*(#.*)?$/i;
+    console.log(line, add.test(line));
   }
 }
 

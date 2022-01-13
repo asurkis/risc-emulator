@@ -1,0 +1,69 @@
+Addition:
+- add  rd, rs1, rs2
+- addi rd, rs1, imm
+
+Set less than (immediate):
+- slt  rd, rs1, rs2
+- slti rd, rs1, imm
+
+Binary logic:
+- and  rd, rs1, rs2
+- andi rd, rs1, imm
+- or   rd, rs1, rs2
+- ori  rd, rs1, imm
+- xor  rd, rs1, rs2
+- xori rd, rs1, imm
+
+Shift left logical:
+- sll  rd, rs1, rs2
+- slli rd, rs1, imm
+
+Shift right logical:
+- srl  rd, rs1, rs2
+- srli rd, rs1, imm
+
+Shift right arithmetical:
+- sra  rd, rs1, rs2
+- srai rd, rs1, imm
+
+Load upper immediate (upper 20 bits, lower 12 — zeros):
+- lui rd, imm
+
+Add upper immediate to PC:
+- auipc rd, imm
+
+Load immediate:
+- li rd, imm
+
+Jump (relatively) and link (store next PC in RD):
+- jal rd, imm
+- jalr rd, rs1, imm
+
+Branches:
+- beq  imm, rs1, rs2
+- bne  imm, rs1, rs2
+- blt  imm, rs1, rs2
+- bltu imm, rs1, rs2
+- bge  imm, rs1, rs2
+- bgeu imm, rs1, rs2
+
+Load:
+- lw reg_dst, rs1, imm
+
+Store:
+- sw rs1, rs2, imm
+
+Multiplication:
+- mul    rd, rs1, rs2
+- mulh   rd, rs1, rs2
+- mulhu  rd, rs1, rs2
+- mulhsu rd, rs1, rs2
+
+Division:
+- div   rd, rs1, rs2
+- divu  rd, rs1, rs2
+- rem   rd, rs1, rs2
+- remu  rd, rs1, rs2
+
+Not from RISC-V:
+- hlt
