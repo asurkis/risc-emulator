@@ -8,17 +8,12 @@ html, body, main {
 }
 
 main {
-  display: grid;
-  grid-template-columns: auto 1fr 1fr;
+  grid-template: 1fr 1fr / auto 1fr 1fr;
   gap: .5em;
 }
 
 textarea {
   resize: none;
-}
-
-#programOutput {
-  grid-column: 2/4;
 }
 
 #controlPanel {
@@ -29,6 +24,15 @@ textarea {
 #controlPanel > div {
   display: grid;
   gap: .5em;
+}
+
+tr:nth-child(even) {
+  background-color: #eee;
+}
+
+td:nth-child(even) {
+  min-width: 10ch;
+  text-align: right;
 }
 
 button {

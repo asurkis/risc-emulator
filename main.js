@@ -1,6 +1,7 @@
 const REGISTER_ADDRESS_BITS = 5;
 const REGISTER_COUNT = 1 << REGISTER_ADDRESS_BITS;
 
+const registersTable = {};
 let sourceCode;
 let compiledProgram;
 let programOutput;
@@ -91,7 +92,7 @@ const lineVariants = {
   S: {
     regex: /^\s*(\w+)\s+x(\d+),\s*(-?\d+),\s*x(\d+)\s*(?:#.*)?/i,
     ops: {
-      sw: (rs2, rs1, imm) => {
+      sw: (rs2, imm, rs1) => {
         const a = getReg(rs2);
         const b = getReg(rs1);
         state.memory[b + imm] = a;
@@ -143,6 +144,13 @@ const lineVariants = {
   },
 };
 
+function updateRegisters() {
+  registersTable.pc.innerText = state.programCounter;
+  for (const reg in state.registers) {
+    registersTable[`x${reg}`].innerText = state.registers[reg];
+  }
+}
+
 function reloadProgram() {
   state = {
     programCounter: 0,
@@ -150,6 +158,7 @@ function reloadProgram() {
     memory: new Int32Array(1 << 16),
     isHalted: false,
   };
+  updateRegisters();
 
   const labels = {};
   const labelJumps = [];
@@ -157,7 +166,7 @@ function reloadProgram() {
   program = [];
   const lines = sourceCode.value.split('\n');
 
-  for (let lineId = 0; lineId < lines.length; ++lineId) {
+  for (const lineId in lines) {
     const line = lines[lineId];
     let matchedOnce = false;
     for (const type in lineVariants) {
@@ -183,19 +192,29 @@ function reloadProgram() {
       }
 
       const func = variant.ops[op];
-      if (type == 'U') {
-        program.push({
-          exec: () => func(+match[2], +match[3]),
-          desc: `${match[1]}\t${+match[2]}\t${+match[3]}`,
-        });
-      } else if (type == 'labelJump') {
-        labelJumps.push({ pos: program.length, label: match[3], lineId, rd: match[1], func });
-        program.push({});
-      } else {
+      if (type == 'R') {
         program.push({
           exec: () => func(+match[2], +match[3], +match[4]),
-          desc: `${match[1]}\t${+match[2]}\t${+match[3]}\t${+match[4]}`,
+          desc: `${match[1]} x${+match[2]}, x${+match[3]}, x${+match[4]}`,
         });
+      } else if (type == 'I') {
+        program.push({
+          exec: () => func(+match[2], +match[3], +match[4]),
+          desc: `${match[1]} x${+match[2]}, x${+match[3]}, ${+match[4]}`,
+        });
+      } else if (type == 'S') {
+        program.push({
+          exec: () => func(+match[2], +match[3], +match[4]),
+          desc: `${match[1]} x${+match[2]}, ${+match[3]}, x${+match[4]}`,
+        });
+      } else if (type == 'U') {
+        program.push({
+          exec: () => func(+match[2], +match[3]),
+          desc: `${match[1]} x${+match[2]}, ${+match[3]}`,
+        });
+      } else if (type == 'labelJump') {
+        labelJumps.push({ pos: program.length, label: match[3], lineId, rd: match[2], func });
+        program.push({});
       }
     }
 
@@ -211,8 +230,8 @@ function reloadProgram() {
     }
     program[lj.pos] = {
       exec: () => lj.func(lj.rd, labels[lj.label]),
-      desc: `jal ${lj.rd}, ${labels[lj.label]} # ${lj.label}`
-    }
+      desc: `jal x${lj.rd}, ${labels[lj.label]} # ${lj.label}`
+    };
   }
 
   if (errors.length == 0) {
@@ -223,7 +242,8 @@ function reloadProgram() {
 }
 
 function stepOnce() {
-
+  program[state.programCounter++].exec();
+  updateRegisters();
 }
 
 function runProgram() {
@@ -243,6 +263,36 @@ window.onload = () => {
   programOutput = document.getElementById('programOutput');
 
   sourceCode.value = localStorage.getItem('savedSource');
+
+  const registersPlaceholder = document.getElementById('registers');
+  const table = document.createElement('table');
+  let tr = document.createElement('tr');
+  let td = document.createElement('td');
+  td.innerText = 'pc';
+  tr.appendChild(td);
+  td = document.createElement('td');
+  tr.appendChild(td);
+  td.innerText = '0';
+  table.appendChild(tr);
+  registersTable.pc = td;
+
+  for (let i = 0; i < REGISTER_COUNT; i += 4) {
+    tr = document.createElement('tr');
+
+    for (let j = 0; j < 4; ++j) {
+      td = document.createElement('td');
+      td.innerText = `x${i + j}`;
+      tr.appendChild(td);
+      td = document.createElement('td');
+      td.innerText = '0';
+      tr.appendChild(td);
+      registersTable[`x${i + j}`] = td;
+    }
+
+    table.appendChild(tr);
+  }
+
+  registersPlaceholder.appendChild(table);
 }
 
 window.onunload = () => {
