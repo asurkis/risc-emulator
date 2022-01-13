@@ -10,15 +10,16 @@
 
 <body>
   <main>
-    <textarea id="code" placeholder="Enter your code"></textarea>
+    <textarea id="code" placeholder="Source code"></textarea>
+    <output id="compiledProgram"></output>
     <div id="controlPanel">
       <div>
-        <button>Clear output</button>
-        <button>Run</button>
-        <button>asdfasdf</button>
+        <button onclick="clearOutput()">Clear output</button>
+        <button onclick="reloadProgram()">Reload</button>
+        <button onclick="reloadAndRun()">Reload & Run</button>
       </div>
     </div>
-    <output>Here will be your output</output>
+    <output id="programOutput">zxcvzxcvzxcvasdklfja;lsdjfl;kasdjf;laksjdf</output>
   </main>
 </body>
 
