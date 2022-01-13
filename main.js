@@ -126,7 +126,7 @@ const lineVariants = {
     }
   },
   ILabel: {
-    regex: /^\s*(\w+)\s+x(\d+),\s*x(\d+),\s*([a-z]\w*)\s*(?:#.*)?$/i,
+    regex: /^\s*(\w+)\s+x(\d+),\s*x(\d+),\s*([a-z_]\w*)\s*(?:#.*)?$/i,
     ops: (() => {
       const entries = {};
       for (const branch in branching) {
@@ -143,7 +143,7 @@ const lineVariants = {
     })()
   },
   ULabel: {
-    regex: /^\s*(jal)\s+x(\d+),\s*([a-z]\w*)\s*(?:#.*)?$/i,
+    regex: /^\s*(jal)\s+x(\d+),\s*([a-z_]\w*)\s*(?:#.*)?$/i,
     ops: {
       // lui: (rd, imm) => {},
       // auipc: {},
@@ -169,7 +169,7 @@ const lineVariants = {
   //   }
   // },
   label: {
-    regex: /^\s*([a-z]\w*):\s*(?:#.*)?$/i
+    regex: /^\s*([a-z_]\w*):\s*(?:#.*)?$/i
   },
   empty: {
     regex: /^\s*(?:#.*)?$/i
@@ -209,20 +209,25 @@ function reloadProgram() {
         continue;
       }
 
-      matchedOnce = true;
       if (type == 'empty') {
+        matchedOnce = true;
         break;
       }
+
       if (type == 'label') {
+        matchedOnce = true;
         labels[match[1]] = program.length;
         break;
       }
 
       const op = match[1];
       if (variant.ops[op] === undefined) {
-        errors.push(`Uknown operator '${op}' of type '${type}' at line ${lineId}`)
-        break;
+        // errors.push(`Uknown operator '${op}' of type '${type}' at line ${lineId}`)
+        // break;
+        continue;
       }
+
+      matchedOnce = true;
 
       const func = variant.ops[op];
       if (type == 'R') {
@@ -304,7 +309,7 @@ function reloadProgram() {
   }
 
   if (errors.length == 0) {
-    compiledProgram.innerText = program.map(c => c.desc).join('\n');
+    compiledProgram.innerText = program.map((c, i) => `${i}: ${c.desc}`).join('\n');
   } else {
     compiledProgram.innerText = errors.join('\n');
     program = [];
