@@ -12,6 +12,11 @@ main {
   gap: .5em;
 }
 
+#programOutput:empty::after {
+  color: #777;
+  content: 'Program output will be here';
+}
+
 textarea {
   resize: none;
 }

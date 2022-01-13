@@ -58,7 +58,7 @@ const branching = {
 
 const lineVariants = {
   R: {
-    regex: /^\s*(\w+)\s+x(\d+),\s*x(\d+),\s*x(\d+)\s*(?:#.*)?/i,
+    regex: /^\s*(\w+)\s+x(\d+),\s*x(\d+),\s*x(\d+)\s*(?:#.*)?$/i,
     ops: Object.fromEntries(Object.entries(arithmetics).map(([op, fun]) => [
       op,
       (rd, rs1, rs2) => {
@@ -69,7 +69,7 @@ const lineVariants = {
     ]))
   },
   I: {
-    regex: /^\s*(\w+)\s+x(\d+),\s*x(\d+),\s*(-?\d+)\s*(?:#.*)?/i,
+    regex: /^\s*(\w+)\s+x(\d+),\s*x(\d+),\s*(-?\d+)\s*(?:#.*)?$/i,
     ops: (() => {
       const entries = {};
       const arithmetical = ['add', 'slt', 'and', 'or', 'xor', 'xll', 'xrl', 'sra'];
@@ -104,7 +104,7 @@ const lineVariants = {
     })()
   },
   S: {
-    regex: /^\s*(\w+)\s+x(\d+),\s*(-?\d+),\s*x(\d+)\s*(?:#.*)?/i,
+    regex: /^\s*(\w+)\s+x(\d+),\s*(-?\d+),\s*x(\d+)\s*(?:#.*)?$/i,
     ops: {
       sw: (rs2, imm, rs1) => {
         const a = getReg(rs2);
@@ -114,7 +114,7 @@ const lineVariants = {
     }
   },
   U: {
-    regex: /^\s*(\w+)\s+x(\d+),\s*(-?\d+)\s*(?:#.*)?/i,
+    regex: /^\s*(\w+)\s+x(\d+),\s*(-?\d+)\s*(?:#.*)?$/i,
     ops: {
       // lui: (rd, imm) => {},
       // auipc: {},
@@ -125,8 +125,8 @@ const lineVariants = {
       },
     }
   },
-  'ILabel': {
-    regex: /^\s*(\w+)\s+x(\d+),\s*x(\d+),\s*([a-z]\w*)\s*(?:#.*)?/i,
+  ILabel: {
+    regex: /^\s*(\w+)\s+x(\d+),\s*x(\d+),\s*([a-z]\w*)\s*(?:#.*)?$/i,
     ops: (() => {
       const entries = {};
       for (const branch in branching) {
@@ -142,8 +142,8 @@ const lineVariants = {
       return entries;
     })()
   },
-  'ULabel': {
-    regex: /^\s*(jal)\s+x(\d+),\s*([a-z]\w*)\s*(?:#.*)?/i,
+  ULabel: {
+    regex: /^\s*(jal)\s+x(\d+),\s*([a-z]\w*)\s*(?:#.*)?$/i,
     ops: {
       // lui: (rd, imm) => {},
       // auipc: {},
@@ -154,10 +154,11 @@ const lineVariants = {
       },
     }
   },
-  env0: {
-    regex: /^\s*(\w+)\s*(?:#.*)?$/,
+  noArg: {
+    regex: /^\s*(\w+)\s*(?:#.*)?$/i,
     ops: {
-      ehalt: () => { state.isHalted = true; }
+      ehalt: () => { state.isHalted = true; },
+      ewrite: () => { programOutput.innerText += String.fromCharCode(getReg(31)); },
     }
   },
   // env1: {
@@ -193,6 +194,7 @@ function reloadProgram() {
 
   const labels = {};
   const labelJumps = [];
+  const labelBranches = [];
   const errors = [];
   program = [];
   const lines = sourceCode.value.split('\n');
@@ -244,8 +246,31 @@ function reloadProgram() {
           desc: `${match[1]} x${+match[2]}, ${+match[3]}`,
         });
       } else if (type == 'ULabel') {
-        labelJumps.push({ pos: program.length, label: match[3], lineId, rd: match[2], func });
+        labelJumps.push({
+          pos: program.length,
+          lineId,
+          func,
+          op: match[1],
+          rd: match[2],
+          label: match[3],
+        });
         program.push({});
+      } else if (type == 'ILabel') {
+        labelBranches.push({
+          pos: program.length,
+          lineId,
+          func,
+          op: match[1],
+          rs1: match[2],
+          rs2: match[3],
+          label: match[4],
+        });
+        program.push({});
+      } else if (type == 'noArg') {
+        program.push({
+          exec: func,
+          desc: match[1],
+        });
       }
     }
 
@@ -262,7 +287,19 @@ function reloadProgram() {
     const diff = labels[lj.label] - lj.pos;
     program[lj.pos] = {
       exec: () => lj.func(lj.rd, diff),
-      desc: `jal x${lj.rd}, ${diff} # ${lj.label}`
+      desc: `${lj.op} x${lj.rd}, ${diff} # ${lj.label}`
+    };
+  }
+
+  for (const lb of labelBranches) {
+    if (labels[lb.label] === undefined) {
+      errors.push(`Unknown label '${lb.label}' at line ${lb.lineId}`);
+      continue;
+    }
+    const diff = labels[lb.label] - lb.pos;
+    program[lb.pos] = {
+      exec: () => lb.func(lb.rs1, lb.rs2, diff),
+      desc: `${lb.op} x${lb.rs1}, x${lb.rs2}, ${diff} # ${lb.label}`
     };
   }
 
@@ -270,6 +307,7 @@ function reloadProgram() {
     compiledProgram.innerText = program.map(c => c.desc).join('\n');
   } else {
     compiledProgram.innerText = errors.join('\n');
+    program = [];
   }
 }
 
@@ -285,7 +323,7 @@ function stepOnce() {
 function runProgram() {
   if (!state.isHalted) {
     stepOnce();
-    setTimeout(runProgram, 1);
+    setTimeout(runProgram);
   }
 }
 
