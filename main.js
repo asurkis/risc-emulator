@@ -45,6 +45,10 @@ const arithmetics = {
   // divu: (a, b) => a + b,
   rem: (a, b) => a % b,
   // remu: (a, b) => a + b,
+  lt: (a, b) => a < b ? 1 : 0,
+  ne: (a, b) => a == b ? 0 : 1,
+  eq: (a, b) => a == b ? 1 : 0,
+  geq: (a, b) => a >= b ? 1 : 0,
 };
 
 const branching = {
@@ -52,13 +56,13 @@ const branching = {
   ne: (a, b) => a != b,
   lt: (a, b) => a < b,
   // ltu: (a, b) => { },
-  ge: (a, b) => a > b,
+  geq: (a, b) => a >= b,
   // geu: (a, b) => { },
 }
 
 const lineVariants = {
   R: {
-    regex: /^\s*(\w+)\s+x(\d+),\s*x(\d+),\s*x(\d+)\s*(?:#.*)?$/i,
+    regex: /^\s*(\w+)\s+x(\d+)\s*,\s*x(\d+)\s*,\s*x(\d+)\s*(?:#.*)?$/i,
     ops: Object.fromEntries(Object.entries(arithmetics).map(([op, fun]) => [
       op,
       (rd, rs1, rs2) => {
@@ -69,7 +73,7 @@ const lineVariants = {
     ]))
   },
   I: {
-    regex: /^\s*(\w+)\s+x(\d+),\s*x(\d+),\s*(-?\d+)\s*(?:#.*)?$/i,
+    regex: /^\s*(\w+)\s+x(\d+)\s*,\s*x(\d+)\s*,\s*(-?\d+)\s*(?:#.*)?$/i,
     ops: (() => {
       const entries = {};
       const arithmetical = ['add', 'slt', 'and', 'or', 'xor', 'xll', 'xrl', 'sra'];
@@ -94,7 +98,7 @@ const lineVariants = {
       entries['jalr'] = (rd, rs1, imm) => {
         const a = getReg(rs1);
         setReg(rd, state.programCounter);
-        shiftPC(a + imm);
+        state.programCounter = a + imm;
       };
       entries['lw'] = (rd, rs1, imm) => {
         const a = getReg(rs1);
@@ -104,9 +108,9 @@ const lineVariants = {
     })()
   },
   S: {
-    regex: /^\s*(\w+)\s+x(\d+),\s*(-?\d+),\s*x(\d+)\s*(?:#.*)?$/i,
+    regex: /^\s*(\w+)\s+x(\d+)\s*,\s*x(\d+)\s*,\s*(-?\d+)\s*(?:#.*)?$/i,
     ops: {
-      sw: (rs2, imm, rs1) => {
+      sw: (rs2, rs1, imm) => {
         const a = getReg(rs2);
         const b = getReg(rs1);
         state.memory[b + imm] = a;
@@ -114,7 +118,7 @@ const lineVariants = {
     }
   },
   U: {
-    regex: /^\s*(\w+)\s+x(\d+),\s*(-?\d+)\s*(?:#.*)?$/i,
+    regex: /^\s*(\w+)\s+x(\d+)\s*,\s*(-?\d+)\s*(?:#.*)?$/i,
     ops: {
       // lui: (rd, imm) => {},
       // auipc: {},
@@ -126,7 +130,7 @@ const lineVariants = {
     }
   },
   ILabel: {
-    regex: /^\s*(\w+)\s+x(\d+),\s*x(\d+),\s*([a-z_]\w*)\s*(?:#.*)?$/i,
+    regex: /^\s*(\w+)\s+x(\d+)\s*,\s*x(\d+)\s*,\s*([a-z_]\w*)\s*(?:#.*)?$/i,
     ops: (() => {
       const entries = {};
       for (const branch in branching) {
@@ -143,7 +147,7 @@ const lineVariants = {
     })()
   },
   ULabel: {
-    regex: /^\s*(jal)\s+x(\d+),\s*([a-z_]\w*)\s*(?:#.*)?$/i,
+    regex: /^\s*(jal)\s+x(\d+)\s*,\s*([a-z_]\w*)\s*(?:#.*)?$/i,
     ops: {
       // lui: (rd, imm) => {},
       // auipc: {},
@@ -243,7 +247,7 @@ function reloadProgram() {
       } else if (type == 'S') {
         program.push({
           exec: () => func(+match[2], +match[3], +match[4]),
-          desc: `${match[1]} x${+match[2]}, ${+match[3]}, x${+match[4]}`,
+          desc: `${match[1]} x${+match[2]}, x${+match[3]}, ${+match[4]}`,
         });
       } else if (type == 'U') {
         program.push({
