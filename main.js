@@ -183,7 +183,109 @@ function updateRegisters() {
 }
 
 function encodeCommand(op, args) {
-  let type, opcode, rd, rs1, rs2, imm;
+  let type, opcode, rd, rs1, rs2, imm, funct3, funct7;
+  switch (op) {
+    case 'lui': opcode = 0b0110111; break;
+    case 'auipc': opcode = 0b0010111; break;
+    case 'jal': opcode = 0b1101111; break;
+    case 'jalr': funct3 = 0b000; opcode = 0b1100111; break;
+    case 'beq': funct3 = 0b000; opcode = 0b1100011; break;
+    case 'bne': funct3 = 0b001; opcode = 0b1100011; break;
+    case 'blt': funct3 = 0b100; opcode = 0b1100011; break;
+    case 'bge': funct3 = 0b101; opcode = 0b1100011; break;
+    case 'lw': funct3 = 0b010; opcode = 0b0000011; break;
+    case 'sw': funct3 = 0b010; opcode = 0b0100011; break;
+    case 'addi': funct3 = 0b000; opcode = 0b0010011; break; // , slti, sltiu, xori, ori, andi, slli, srli, srai
+    case 'add': funct3 = 0b000; funct7 = 0b0000000; opcode = 0b0110011; break;
+    case 'sub': funct3 = 0b000; funct7 = 0b0100000; opcode = 0b0110011; break;
+    case 'sll': funct3 = 0b001; funct7 = 0b0000000; opcode = 0b0110011; break;
+    case 'slt': funct3 = 0b010; funct7 = 0b0000000; opcode = 0b0110011; break;
+    case 'seq': funct3 = 0b010; funct7 = 0b0000001; opcode = 0b0110011; break;
+    case 'sne': funct3 = 0b010; funct7 = 0b0000011; opcode = 0b0110011; break;
+    case 'sgeq': funct3 = 0b010; funct7 = 0b0000010; opcode = 0b0110011; break;
+    case 'xor': funct3 = 0b100; funct7 = 0b0000000; opcode = 0b0110011; break;
+    case 'srl': funct3 = 0b101; funct7 = 0b0000000; opcode = 0b0110011; break;
+    case 'sra': funct3 = 0b101; funct7 = 0b0100000; opcode = 0b0110011; break;
+    case 'or': funct3 = 0b110; funct7 = 0b0000000; opcode = 0b0110011; break;
+    case 'and': funct3 = 0b111; funct7 = 0b0000000; opcode = 0b0110011; break;
+    case 'mul': funct3 = 0b000; funct7 = 0b0000001; opcode = 0b0110011; break;
+    case 'div': funct3 = 0b100; funct7 = 0b0000001; opcode = 0b0110011; break;
+    case 'rem': funct3 = 0b110; funct7 = 0b0000001; opcode = 0b0110011; break;
+    default: return 0;
+  }
+
+  switch (opcode) {
+    case 0b0110111: type = 'U'; break;
+    case 0b0010111: type = 'U'; break;
+    case 0b1101111: type = 'U'; break;
+    case 0b1100111: type = 'I'; break;
+    case 0b1100011: type = 'B'; break;
+    case 0b0000011: type = 'I'; break;
+    case 0b0100011: type = 'S'; break;
+    case 0b0010011: type = 'I'; break;
+    case 0b0110011: type = 'R'; break;
+  }
+
+  switch (type) {
+    case 'R':
+      rd = args[0] & 31;
+      rs1 = args[1] & 31;
+      rs2 = args[2] & 31;
+      return (
+        opcode |
+        (rd << 7) |
+        (funct3 << 12) |
+        (funct7 << 25) |
+        (rs1 << 15) |
+        (rs2 << 20)
+      );
+    case 'I':
+      rd = args[0] & 31;
+      rs1 = args[1] & 31;
+      imm = (args[2] + 0x800) % 0x1000;
+      return (
+        opcode |
+        (funct3 << 12) |
+        (rd << 7) |
+        (rs1 << 15) |
+        (imm << 20)
+      );
+    case 'S':
+      rs1 = args[0] & 31;
+      rs2 = args[1] & 31;
+      imm = (args[2] + 0x800) % 0x1000;
+      return (
+        opcode |
+        (funct3 << 12) |
+        (rs1 << 15) |
+        (rs2 << 20) |
+        (((imm >> 0) & 31) << 7) |
+        (((imm >> 5) & 127) << 25)
+      );
+    case 'B':
+      rs1 = args[0] & 31;
+      rs2 = args[1] & 31;
+      imm = (args[2] + 0x800) % 0x1000;
+      return (
+        opcode |
+        (funct3 << 12) |
+        (rs1 << 15) |
+        (rs2 << 20) |
+        (((imm >> 10) & 1) << 7) |
+        (((imm >> 0) & 15) << 8) |
+        (((imm >> 4) & 63) << 25) |
+        (((imm >> 11) & 1) << 31)
+      );
+    case 'U':
+      rd = args[0] & 31;
+      imm = args[1] & 0xFFFFF;
+      return (
+        opcode |
+        (rd << 7) |
+        (imm << 12)
+      );
+    // case 'J': break;
+  }
 }
 
 function decodeCommand(code) {
