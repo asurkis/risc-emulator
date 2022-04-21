@@ -45,10 +45,10 @@ const arithmetics = {
   // divu: (a, b) => a + b,
   rem: (a, b) => a % b,
   // remu: (a, b) => a + b,
-  lt: (a, b) => a < b ? 1 : 0,
-  ne: (a, b) => a == b ? 0 : 1,
-  eq: (a, b) => a == b ? 1 : 0,
-  geq: (a, b) => a >= b ? 1 : 0,
+  // lt: (a, b) => a < b ? 1 : 0,
+  sne: (a, b) => a == b ? 0 : 1,
+  seq: (a, b) => a == b ? 1 : 0,
+  sgeq: (a, b) => a >= b ? 1 : 0,
 };
 
 const branching = {
