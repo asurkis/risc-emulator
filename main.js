@@ -1,3 +1,5 @@
+/* Simplified encodings of JAL, JALR, branches!! */
+
 const REGISTER_ADDRESS_BITS = 5;
 const REGISTER_COUNT = 1 << REGISTER_ADDRESS_BITS;
 
@@ -46,7 +48,7 @@ const arithmetics = {
   rem: (a, b) => a % b,
   // remu: (a, b) => a + b,
   // lt: (a, b) => a < b ? 1 : 0,
-  sne: (a, b) => a == b ? 0 : 1,
+  sne: (a, b) => a != b ? 1 : 0,
   seq: (a, b) => a == b ? 1 : 0,
   sgeq: (a, b) => a >= b ? 1 : 0,
 };
@@ -129,7 +131,7 @@ const lineVariants = {
       },
     }
   },
-  ILabel: {
+  BLabel: {
     regex: /^\s*(\w+)\s+x(\d+)\s*,\s*x(\d+)\s*,\s*([a-z_]\w*)\s*(?:#.*)?$/i,
     ops: (() => {
       const entries = {};
@@ -147,7 +149,7 @@ const lineVariants = {
     })()
   },
   ULabel: {
-    regex: /^\s*(jal)\s+x(\d+)\s*,\s*([a-z_]\w*)\s*(?:#.*)?$/i,
+    regex: /^\s*(\w+)\s+x(\d+)\s*,\s*([a-z_]\w*)\s*(?:#.*)?$/i,
     ops: {
       // lui: (rd, imm) => {},
       // auipc: {},
@@ -165,13 +167,6 @@ const lineVariants = {
       ewrite: () => { programOutput.innerText += String.fromCharCode(getReg(31)); },
     }
   },
-  // env1: {
-  //   regex: /^\s*(\w+)\s+x(\d+)\s*(?:#.*)?$/,
-  //   ops: {
-  //     ewrite: () => { console.log() },
-  //     eread: () => { console },
-  //   }
-  // },
   label: {
     regex: /^\s*([a-z_]\w*):\s*(?:#.*)?$/i
   },
@@ -185,6 +180,158 @@ function updateRegisters() {
   for (const reg in state.registers) {
     registersTable[`x${reg}`].innerText = state.registers[reg];
   }
+}
+
+function encodeCommand(op, args) {
+  let type, opcode, rd, rs1, rs2, imm;
+}
+
+function decodeCommand(code) {
+  const funct3 = (code >> 12) & 7;
+  const funct7 = (code >> 25) & 127;
+  const immu = (code >> 12) & 0xFFFFF;
+  const immi = (code >> 20) & 0xFFF;
+  // 0x000 => 0x0800 => 0x800 => 0
+  // 0x7FF => 0x0FFF => 0xFFF => 0x7FF
+  // 0x800 => 0x1000 => 0x000 => -0x800
+  const immis = (immi + 0x800) % 0x1000 - 0x800;
+  const imms =
+    (((code >> 7) & 31) << 0) |
+    (((code >> 25) & 127) << 5);
+  const immss = (imms + 0x800) % 0x1000 - 0x800;
+  const immb =
+    (((code >> 7) & 1) << 10) |
+    (((code >> 8) & 15) << 0) |
+    (((code >> 25) & 63) << 4) |
+    (((code >> 31) & 1) << 11);
+  const immbi = (immb + 0x800) % 0x1000 - 0x800;
+  const rd = (code >> 7) & 31;
+  const rs1 = (code >> 15) & 31;
+  const rs2 = (code >> 20) & 31;
+  let op, opdesc;
+
+  switch (code & 0x7F) {
+    case 0b0110111: // lui
+      return {
+        op: `lui x${rd}, ${immu}`,
+        desc: `x${rd} := ${immu} * 2^12`,
+        eval: () => { setReg(rd, immu << 12); }
+      };
+    case 0b0010111: // auipc
+      return {
+        op: `auipc x${rd}, ${immu}`,
+        desc: `x${rd} := ${immu} * 2^12 + pc`,
+        eval: () => {
+          const pc = state.programCounter;
+          setReg(rd, (immu << 12) + pc);
+        }
+      };
+    case 0b1101111: // jal
+      return {
+        op: `jal x${rd}, ${immu}`,
+        desc: `x${rd} := pc; pc := pc + ${immu}`,
+        eval: () => { shiftPC(immu); }
+      };
+    case 0b1100111: // jalr
+      if (funct3 != 0) {
+        return null;
+      }
+      return {
+        op: `jalr x${rd}, x${rs1}, ${immis}`,
+        desc: `x${rd} := pc; pc := x${rs1} ${immis < 0 ? '-' : '+'} ${Math.abs(immis)}`,
+        eval: () => {
+          const a = getReg(rs1);
+          setReg(rd, state.programCounter);
+          state.programCounter = a + immis;
+        }
+      };
+    case 0b1100011: // beq, bne, blt, bge, bltu, bgeu
+      switch (funct3) {
+        case 0b000: op = 'eq'; opdesc = '=='; break;
+        case 0b001: op = 'ne'; opdesc = '!='; break;
+        case 0b100: op = 'lt'; opdesc = '<'; break;
+        case 0b101: op = 'geq'; opdesc = '>='; break;
+        default: return null;
+      }
+      return {
+        op: `b${op} x${rs1}, x${rs2}, ${immbi}`,
+        desc: `if x${rs1} ${opdesc} x${rs2} then pc := pc ${immbi < 0 ? '-' : '+'} ${Math.abs(immbi)}`,
+        eval: () => {
+          const a = getReg(rs1);
+          const b = getReg(rs2);
+          if (branching[op](a, b)) {
+            shiftPC(immbi);
+          }
+        }
+      };
+    case 0b0000011: // lw
+      if (funct3 != 0b010) {
+        return null;
+      }
+      return {
+        op: `lw x${rd}, x${rs1}, ${immis}`,
+        desc: `x${rd} := [x${rs1} + (${immis})]`,
+        eval: () => {
+          const a = getReg(rs1);
+          setReg(rd, state.memory[a + immis]);
+        }
+      };
+    case 0b0100011: // sw
+      if (funct3 != 0b010) {
+        return null;
+      }
+      return {
+        op: `sw x${rs1}, x${rs2}, ${immss}`,
+        desc: `[x${rs1} + ${immss}] := x${rs2}`,
+        eval: () => {
+          const a = getReg(rs1);
+          const b = getReg(rs2);
+          state.memory[a + immss] = b;
+        }
+      };
+    case 0b0010011: // addi, slti, sltiu, xori, ori, andi, slli, srli, srai
+      switch (funct3) {
+        case 0b000: op = 'add'; opdesc = '+'; break;
+        // case 0b010: op = 'slt'; opdesc = '<'; break;
+        // case 0b100: op =
+      }
+      return {
+        op: `${op}i x${rd}, x${rs1}, ${immis}`,
+        desc: `x${rd} := x${rs1} + (${immis})`,
+        eval: () => {
+          const a = getReg(rs1);
+          setReg(rd, a + immis);
+        }
+      };
+    case 0b0110011: // add, sub, sll, slt, sltu, xor, srl, sra, or, and, mul, div, rem
+      switch (funct3 | (funct7 << 3)) {
+        case 0b0000000_000: op = 'add'; opdesc = '+'; break;
+        case 0b0100000_000: op = 'sub'; opdesc = '-'; break;
+        case 0b0000000_001: op = 'sll'; opdesc = '<<'; break;
+        case 0b0000000_010: op = 'slt'; opdesc = '<'; break;
+        case 0b0000001_010: op = 'seq'; opdesc = '=='; break;
+        case 0b0000011_010: op = 'sne'; opdesc = '!='; break;
+        case 0b0000010_010: op = 'sgeq'; opdesc = '>='; break;
+        case 0b0000000_100: op = 'xor'; opdesc = 'xor'; break;
+        case 0b0000000_101: op = 'srl'; opdesc = '>>'; break;
+        case 0b0100000_101: op = 'sra'; opdesc = '>>>'; break;
+        case 0b0000000_110: op = 'or'; opdesc = 'or'; break;
+        case 0b0000000_111: op = 'and'; opdesc = 'and'; break;
+        case 0b0000001_000: op = 'mul'; opdesc = '*'; break;
+        case 0b0000001_100: op = 'div'; opdesc = '/'; break;
+        case 0b0000001_110: op = 'rem'; opdesc = '%'; break;
+      }
+      return {
+        op: `${op} x${rd}, x${rs1}, x${rs2}`,
+        desc: `x${rd} := x${rs1} + x${rs2}`,
+        eval: () => {
+          const a = getReg(rs1);
+          const b = getReg(rs2);
+          setReg(rd, a + b);
+        }
+      };
+  }
+  return null;
 }
 
 function reloadProgram() {
@@ -264,7 +411,7 @@ function reloadProgram() {
           label: match[3],
         });
         program.push({});
-      } else if (type == 'ILabel') {
+      } else if (type == 'BLabel') {
         labelBranches.push({
           pos: program.length,
           lineId,
