@@ -155,6 +155,9 @@ const lineVariants = {
     regex: /^\s*(\w+)\s*x(\d+)\s*(?:#.*)?$/i,
     ops: ['eread', 'ewrite']
   },
+  data: {
+    regex: /^\s*data\s+([+-]?\d+)\s*\*\s*(\d+)\s*(?:#.*)?$/i,
+  },
   label: {
     regex: /^\s*([a-z_]\w*):\s*(?:#.*)?$/i
   },
@@ -171,6 +174,10 @@ function updateRegisters() {
 }
 
 function encodeCommand(op, args) {
+  if (op == 'data') {
+    return args[0];
+  }
+
   let type, opcode, rd, rs1, rs2, imm, funct3, funct7;
   switch (op) {
     case 'lui': opcode = 0b0110111; break;
@@ -504,7 +511,6 @@ function reloadProgram() {
     commands: new Array(1 << 16).map(_ => null),
     isHalted: false,
   };
-  updateRegisters();
 
   const labels = {};
   const labelJumps = [];
@@ -534,6 +540,16 @@ function reloadProgram() {
         break;
       }
 
+      if (type == 'data') {
+        matchedOnce = true;
+        const val = +match[1];
+        const n = +match[2];
+        for (let i = 0; i < n; ++i) {
+          program.push(['data', [val]]);
+        }
+        break;
+      }
+
       const op = match[1];
       if (variant.ops.indexOf(op) === -1) {
         // errors.push(`Unknown operator ${op} of type '${type}' at line ${lineId}`);
@@ -553,8 +569,8 @@ function reloadProgram() {
             if (-2048 <= imm && imm < 2048) {
               program.push(['addi', [+match[2], 0, imm]]);
             } else {
-              program.push(['lui', [+match[2], (imm >> 12) & 0xFFFFF]]);
-              program.push(['addi', [+match[2], +match[2], imm & 0xFFF]]);
+              program.push(['lui', [+match[2], (imm & 0xFFFFF000) >> 12]]);
+              program.push(['addi', [+match[2], +match[2], imm % 0x1000]]);
             }
           } else {
             program.push([match[1], [+match[2], +match[3]]]);
@@ -631,6 +647,9 @@ function reloadProgram() {
     memoryTable.style.display = 'none';
     errorList.style.display = '';
   }
+
+  updateMemoryTable();
+  updateRegisters();
 }
 
 function stepOnce() {
