@@ -1,15 +1,20 @@
 /* Simplified encodings of JAL, JALR, branches!! */
 
 const REGISTER_ADDRESS_BITS = 5;
+const MEMORY_PAGE_SIZE = 16;
 const REGISTER_COUNT = 1 << REGISTER_ADDRESS_BITS;
 
 const registersTable = {};
 let sourceCode;
-let compiledProgram;
+let memoryTable;
+let memoryTableBody;
+let errorList;
 let programOutput;
 
+let tableShift = 0;
+const tablePage = [];
+
 let state;
-let program;
 
 function clearOutput() {
   programOutput.innerText = '';
@@ -23,6 +28,58 @@ function setReg(addr, val) {
   if (addr != 0) {
     state.registers[addr] = val;
   }
+}
+
+function getHex(val, digits) {
+  let hex = (val >>> 0).toString(16).toUpperCase();
+  hex = hex.padStart(digits, '0');
+  if (hex.length <= 5) {
+    return hex;
+  }
+  let result = '';
+  const mod = hex.length % 4;
+  if (mod != 0) {
+    result += ' ' + hex.slice(0, mod);
+  }
+  for (i = mod; i < hex.length; i += 4) {
+    result += ' ' + hex.slice(i, i + 4);
+  }
+  return result;
+}
+
+function updateMemoryTable() {
+  for (let i = 0; i < MEMORY_PAGE_SIZE; ++i) {
+    const addr = i + tableShift;
+    const val = getMem(addr);
+    const row = tablePage[i];
+    row.address.innerText = getHex(addr, 4);
+    row.hex.innerText = getHex(val, 8);
+    row.decimal.innerText = '' + val;
+
+    if (addr == state.programCounter) {
+      row.tr.style.backgroundColor = '#bfb';
+    } else {
+      row.tr.style.backgroundColor = '';
+    }
+
+    const cmd = state.commands[addr];
+    if (cmd) {
+      row.command.innerText = cmd.op;
+      row.explanation.innerText = cmd.desc;
+    } else {
+      row.command.innerText = '';
+      row.explanation.innerText = '';
+    }
+  }
+}
+
+function getMem(addr) {
+  return state.memory[addr];
+}
+
+function setMem(addr, val) {
+  state.memory[addr] = val;
+  state.commands[addr] = decodeCommand(state.memory[addr]);
 }
 
 function shiftPC(val) {
@@ -50,7 +107,7 @@ const arithmetics = {
   // lt: (a, b) => a < b ? 1 : 0,
   sne: (a, b) => a != b ? 1 : 0,
   seq: (a, b) => a == b ? 1 : 0,
-  sgeq: (a, b) => a >= b ? 1 : 0,
+  sge: (a, b) => a >= b ? 1 : 0,
 };
 
 const branching = {
@@ -58,114 +115,45 @@ const branching = {
   ne: (a, b) => a != b,
   lt: (a, b) => a < b,
   // ltu: (a, b) => { },
-  geq: (a, b) => a >= b,
+  ge: (a, b) => a >= b,
   // geu: (a, b) => { },
 }
 
 const lineVariants = {
   R: {
     regex: /^\s*(\w+)\s+x(\d+)\s*,\s*x(\d+)\s*,\s*x(\d+)\s*(?:#.*)?$/i,
-    ops: Object.fromEntries(Object.entries(arithmetics).map(([op, fun]) => [
-      op,
-      (rd, rs1, rs2) => {
-        const a = getReg(rs1);
-        const b = getReg(rs2);
-        setReg(rd, fun(a, b));
-      }
-    ]))
+    ops: [
+      'add', 'sub', 'sll', 'slt', 'seq', 'sne', 'sge',
+      'xor', 'srl', 'sra', 'or', 'and', 'mul', 'div', 'rem'
+    ]
   },
   I: {
     regex: /^\s*(\w+)\s+x(\d+)\s*,\s*x(\d+)\s*,\s*(-?\d+)\s*(?:#.*)?$/i,
-    ops: (() => {
-      const entries = {};
-      const arithmetical = ['add', 'slt', 'and', 'or', 'xor', 'xll', 'xrl', 'sra'];
-      for (const key of arithmetical) {
-        const fun = arithmetics[key];
-        entries[key + 'i'] = (rd, rs1, imm) => {
-          const a = getReg(rs1);
-          setReg(rd, fun(a, imm));
-        };
-      }
-
-      for (const branch in branching) {
-        const fun = branching[branch];
-        entries['b' + branch] = (rs1, rs2, imm) => {
-          const a = getReg(rs1);
-          const b = getReg(rs2);
-          if (fun(a, b)) {
-            shiftPC(imm);
-          }
-        };
-      }
-      entries['jalr'] = (rd, rs1, imm) => {
-        const a = getReg(rs1);
-        setReg(rd, state.programCounter);
-        state.programCounter = a + imm;
-      };
-      entries['lw'] = (rd, rs1, imm) => {
-        const a = getReg(rs1);
-        setReg(rd, state.memory[a + imm]);
-      };
-      return entries;
-    })()
+    ops: ['jalr', 'lw', 'addi']
   },
   S: {
     regex: /^\s*(\w+)\s+x(\d+)\s*,\s*x(\d+)\s*,\s*(-?\d+)\s*(?:#.*)?$/i,
-    ops: {
-      sw: (rs2, rs1, imm) => {
-        const a = getReg(rs2);
-        const b = getReg(rs1);
-        state.memory[b + imm] = a;
-      },
-    }
+    ops: ['sw']
   },
   U: {
     regex: /^\s*(\w+)\s+x(\d+)\s*,\s*(-?\d+)\s*(?:#.*)?$/i,
-    ops: {
-      // lui: (rd, imm) => {},
-      // auipc: {},
-      // li: {},
-      jal: (rd, imm) => {
-        setReg(rd, state.programCounter);
-        shiftPC(imm);
-      },
-    }
+    ops: ['li', 'lui', 'auipc', 'jal']
   },
   BLabel: {
     regex: /^\s*(\w+)\s+x(\d+)\s*,\s*x(\d+)\s*,\s*([a-z_]\w*)\s*(?:#.*)?$/i,
-    ops: (() => {
-      const entries = {};
-      for (const branch in branching) {
-        const fun = branching[branch];
-        entries['b' + branch] = (rs1, rs2, imm) => {
-          const a = getReg(rs1);
-          const b = getReg(rs2);
-          if (fun(a, b)) {
-            shiftPC(imm);
-          }
-        };
-      }
-      return entries;
-    })()
+    ops: ['beq', 'bne', 'blt', 'bge']
   },
   ULabel: {
     regex: /^\s*(\w+)\s+x(\d+)\s*,\s*([a-z_]\w*)\s*(?:#.*)?$/i,
-    ops: {
-      // lui: (rd, imm) => {},
-      // auipc: {},
-      // li: {},
-      jal: (rd, imm) => {
-        setReg(rd, state.programCounter);
-        shiftPC(imm);
-      },
-    }
+    ops: ['li', 'jal']
   },
   noArg: {
     regex: /^\s*(\w+)\s*(?:#.*)?$/i,
-    ops: {
-      ehalt: () => { state.isHalted = true; },
-      ewrite: () => { programOutput.innerText += String.fromCharCode(getReg(31)); },
-    }
+    ops: ['ebreak']
+  },
+  env1: {
+    regex: /^\s*(\w+)\s*x(\d+)\s*(?:#.*)?$/i,
+    ops: ['eread', 'ewrite']
   },
   label: {
     regex: /^\s*([a-z_]\w*):\s*(?:#.*)?$/i
@@ -176,7 +164,7 @@ const lineVariants = {
 };
 
 function updateRegisters() {
-  registersTable.pc.innerText = state.programCounter;
+  registersTable.pc.innerText = getHex(state.programCounter, 4);
   for (const reg in state.registers) {
     registersTable[`x${reg}`].innerText = state.registers[reg];
   }
@@ -188,29 +176,33 @@ function encodeCommand(op, args) {
     case 'lui': opcode = 0b0110111; break;
     case 'auipc': opcode = 0b0010111; break;
     case 'jal': opcode = 0b1101111; break;
-    case 'jalr': funct3 = 0b000; opcode = 0b1100111; break;
-    case 'beq': funct3 = 0b000; opcode = 0b1100011; break;
-    case 'bne': funct3 = 0b001; opcode = 0b1100011; break;
-    case 'blt': funct3 = 0b100; opcode = 0b1100011; break;
-    case 'bge': funct3 = 0b101; opcode = 0b1100011; break;
-    case 'lw': funct3 = 0b010; opcode = 0b0000011; break;
-    case 'sw': funct3 = 0b010; opcode = 0b0100011; break;
-    case 'addi': funct3 = 0b000; opcode = 0b0010011; break; // , slti, sltiu, xori, ori, andi, slli, srli, srai
-    case 'add': funct3 = 0b000; funct7 = 0b0000000; opcode = 0b0110011; break;
-    case 'sub': funct3 = 0b000; funct7 = 0b0100000; opcode = 0b0110011; break;
-    case 'sll': funct3 = 0b001; funct7 = 0b0000000; opcode = 0b0110011; break;
-    case 'slt': funct3 = 0b010; funct7 = 0b0000000; opcode = 0b0110011; break;
-    case 'seq': funct3 = 0b010; funct7 = 0b0000001; opcode = 0b0110011; break;
-    case 'sne': funct3 = 0b010; funct7 = 0b0000011; opcode = 0b0110011; break;
-    case 'sgeq': funct3 = 0b010; funct7 = 0b0000010; opcode = 0b0110011; break;
-    case 'xor': funct3 = 0b100; funct7 = 0b0000000; opcode = 0b0110011; break;
-    case 'srl': funct3 = 0b101; funct7 = 0b0000000; opcode = 0b0110011; break;
-    case 'sra': funct3 = 0b101; funct7 = 0b0100000; opcode = 0b0110011; break;
-    case 'or': funct3 = 0b110; funct7 = 0b0000000; opcode = 0b0110011; break;
-    case 'and': funct3 = 0b111; funct7 = 0b0000000; opcode = 0b0110011; break;
-    case 'mul': funct3 = 0b000; funct7 = 0b0000001; opcode = 0b0110011; break;
-    case 'div': funct3 = 0b100; funct7 = 0b0000001; opcode = 0b0110011; break;
-    case 'rem': funct3 = 0b110; funct7 = 0b0000001; opcode = 0b0110011; break;
+    case 'jalr': opcode = 0b1100111; funct3 = 0b000; break;
+    case 'beq': opcode = 0b1100011; funct3 = 0b000; break;
+    case 'bne': opcode = 0b1100011; funct3 = 0b001; break;
+    case 'blt': opcode = 0b1100011; funct3 = 0b100; break;
+    case 'bge': opcode = 0b1100011; funct3 = 0b101; break;
+    case 'lw': opcode = 0b0000011; funct3 = 0b010; break;
+    case 'sw': opcode = 0b0100011; funct3 = 0b010; break;
+    case 'addi': opcode = 0b0010011; funct3 = 0b000; break; // , slti, sltiu, xori, ori, andi, slli, srli, srai
+    case 'add': opcode = 0b0110011; funct3 = 0b000; funct7 = 0b0000000; break;
+    case 'sub': opcode = 0b0110011; funct3 = 0b000; funct7 = 0b0100000; break;
+    case 'sll': opcode = 0b0110011; funct3 = 0b001; funct7 = 0b0000000; break;
+    case 'slt': opcode = 0b0110011; funct3 = 0b010; funct7 = 0b0000000; break;
+    case 'seq': opcode = 0b0110011; funct3 = 0b010; funct7 = 0b0000001; break;
+    case 'sne': opcode = 0b0110011; funct3 = 0b010; funct7 = 0b0000011; break;
+    case 'sge': opcode = 0b0110011; funct3 = 0b010; funct7 = 0b0000010; break;
+    case 'xor': opcode = 0b0110011; funct3 = 0b100; funct7 = 0b0000000; break;
+    case 'srl': opcode = 0b0110011; funct3 = 0b101; funct7 = 0b0000000; break;
+    case 'sra': opcode = 0b0110011; funct3 = 0b101; funct7 = 0b0100000; break;
+    case 'or': opcode = 0b0110011; funct3 = 0b110; funct7 = 0b0000000; break;
+    case 'and': opcode = 0b0110011; funct3 = 0b111; funct7 = 0b0000000; break;
+    case 'mul': opcode = 0b0110011; funct3 = 0b000; funct7 = 0b0000001; break;
+    case 'div': opcode = 0b0110011; funct3 = 0b100; funct7 = 0b0000001; break;
+    case 'rem': opcode = 0b0110011; funct3 = 0b110; funct7 = 0b0000001; break;
+
+    case 'ebreak': opcode = 0b1110011; funct7 = 1; break;
+    case 'eread': opcode = 0b1110011; funct7 = 2; break;
+    case 'ewrite': opcode = 0b1110011; funct7 = 4; break;
     default: return 0;
   }
 
@@ -224,6 +216,7 @@ function encodeCommand(op, args) {
     case 0b0100011: type = 'S'; break;
     case 0b0010011: type = 'I'; break;
     case 0b0110011: type = 'R'; break;
+    case 0b1110011: type = 'E'; break;
   }
 
   switch (type) {
@@ -242,7 +235,7 @@ function encodeCommand(op, args) {
     case 'I':
       rd = args[0] & 31;
       rs1 = args[1] & 31;
-      imm = (args[2] + 0x800) % 0x1000;
+      imm = (args[2] + 0x800) % 0x1000 - 0x800;
       return (
         opcode |
         (funct3 << 12) |
@@ -251,9 +244,9 @@ function encodeCommand(op, args) {
         (imm << 20)
       );
     case 'S':
-      rs1 = args[0] & 31;
-      rs2 = args[1] & 31;
-      imm = (args[2] + 0x800) % 0x1000;
+      rs1 = args[1] & 31;
+      rs2 = args[0] & 31;
+      imm = (args[2] + 0x800) % 0x1000 - 0x800;
       return (
         opcode |
         (funct3 << 12) |
@@ -265,7 +258,7 @@ function encodeCommand(op, args) {
     case 'B':
       rs1 = args[0] & 31;
       rs2 = args[1] & 31;
-      imm = (args[2] + 0x800) % 0x1000;
+      imm = (args[2] + 0x800) % 0x1000 - 0x800;
       return (
         opcode |
         (funct3 << 12) |
@@ -285,6 +278,31 @@ function encodeCommand(op, args) {
         (imm << 12)
       );
     // case 'J': break;
+    case 'E':
+      switch (op) {
+        case 'ebreak':
+          return opcode | (1 << 20);
+        case 'eread':
+          rd = args[0] & 31;
+          return opcode | (rd << 7) | (2 << 20);
+        case 'ewrite':
+          rs1 = args[0] & 31;
+          return opcode | (rs1 << 15) | (4 << 20);
+      }
+  }
+}
+
+function textRegImm(rs1, imm) {
+  if (rs1 == 0) {
+    return `${imm}`;
+  } else {
+    if (imm < 0) {
+      return `x${rs1} - ${-imm}`;
+    } else if (imm > 0) {
+      return `x${rs1} + ${imm}`;
+    } else {
+      return `x${rs1}`;
+    }
   }
 }
 
@@ -292,6 +310,7 @@ function decodeCommand(code) {
   const funct3 = (code >> 12) & 7;
   const funct7 = (code >> 25) & 127;
   const immu = (code >> 12) & 0xFFFFF;
+  const immus = (immu + 0x80000) % 0x100000 - 0x80000;
   const immi = (code >> 20) & 0xFFF;
   // 0x000 => 0x0800 => 0x800 => 0
   // 0x7FF => 0x0FFF => 0xFFF => 0x7FF
@@ -330,9 +349,12 @@ function decodeCommand(code) {
       };
     case 0b1101111: // jal
       return {
-        op: `jal x${rd}, ${immu}`,
-        desc: `x${rd} := pc; pc := pc + ${immu}`,
-        eval: () => { shiftPC(immu); }
+        op: `jal x${rd}, ${immus}`,
+        desc: `x${rd} := pc; pc := pc + ${immus}`,
+        eval: () => {
+          setReg(rd, state.programCounter);
+          shiftPC(immus);
+        }
       };
     case 0b1100111: // jalr
       if (funct3 != 0) {
@@ -352,7 +374,7 @@ function decodeCommand(code) {
         case 0b000: op = 'eq'; opdesc = '=='; break;
         case 0b001: op = 'ne'; opdesc = '!='; break;
         case 0b100: op = 'lt'; opdesc = '<'; break;
-        case 0b101: op = 'geq'; opdesc = '>='; break;
+        case 0b101: op = 'ge'; opdesc = '>='; break;
         default: return null;
       }
       return {
@@ -372,10 +394,24 @@ function decodeCommand(code) {
       }
       return {
         op: `lw x${rd}, x${rs1}, ${immis}`,
-        desc: `x${rd} := [x${rs1} + (${immis})]`,
+        desc: (() => {
+          if (rd == 0) {
+            return '<no effect>';
+          } else if (rs1 == 0) {
+            return `x${rd} := [${immis}]`;
+          } else {
+            if (immis < 0) {
+              return `x${rd} := [x${rs1} - ${-immis}]`;
+            } else if (immis > 0) {
+              return `x${rd} := [x${rs1} + ${immis}]`;
+            } else {
+              return `x${rd} := [x${rs1}]`;
+            }
+          }
+        })(),
         eval: () => {
           const a = getReg(rs1);
-          setReg(rd, state.memory[a + immis]);
+          setReg(rd, getMem(a + immis));
         }
       };
     case 0b0100011: // sw
@@ -388,7 +424,7 @@ function decodeCommand(code) {
         eval: () => {
           const a = getReg(rs1);
           const b = getReg(rs2);
-          state.memory[a + immss] = b;
+          setMem(a + immss, b);
         }
       };
     case 0b0010011: // addi, slti, sltiu, xori, ori, andi, slli, srli, srai
@@ -399,7 +435,7 @@ function decodeCommand(code) {
       }
       return {
         op: `${op}i x${rd}, x${rs1}, ${immis}`,
-        desc: `x${rd} := x${rs1} + (${immis})`,
+        desc: `x${rd} := x${rs1} ${opdesc} (${immis})`,
         eval: () => {
           const a = getReg(rs1);
           setReg(rd, a + immis);
@@ -413,7 +449,7 @@ function decodeCommand(code) {
         case 0b0000000_010: op = 'slt'; opdesc = '<'; break;
         case 0b0000001_010: op = 'seq'; opdesc = '=='; break;
         case 0b0000011_010: op = 'sne'; opdesc = '!='; break;
-        case 0b0000010_010: op = 'sgeq'; opdesc = '>='; break;
+        case 0b0000010_010: op = 'sge'; opdesc = '>='; break;
         case 0b0000000_100: op = 'xor'; opdesc = 'xor'; break;
         case 0b0000000_101: op = 'srl'; opdesc = '>>'; break;
         case 0b0100000_101: op = 'sra'; opdesc = '>>>'; break;
@@ -425,13 +461,37 @@ function decodeCommand(code) {
       }
       return {
         op: `${op} x${rd}, x${rs1}, x${rs2}`,
-        desc: `x${rd} := x${rs1} + x${rs2}`,
+        desc: `x${rd} := x${rs1} ${opdesc} x${rs2}`,
         eval: () => {
           const a = getReg(rs1);
           const b = getReg(rs2);
-          setReg(rd, a + b);
+          setReg(rd, arithmetics[op](a, b));
         }
       };
+    case 0b1110011: // ebreak, eread, ewrite
+      switch ((code >> 20) & 7) {
+        case 1: // ebreak
+          return {
+            op: 'ebreak',
+            desc: 'HALT',
+            eval: () => {
+              state.isHalted = true;
+            }
+          }
+        case 2: // eread
+          // case 'eread':
+          //   rd = args[0] & 31;
+          //   return opcode | (rd << 7) | (2 << 20);
+          break;
+        case 4: // ewrite
+        case 'ewrite':
+          return {
+            op: `ewrite x${rs1}`,
+            desc: `WRITE x${rs1}`,
+            eval: () => { programOutput.innerText += String.fromCharCode(getReg(rs1)); }
+          }
+      }
+      break;
   }
   return null;
 }
@@ -441,6 +501,7 @@ function reloadProgram() {
     programCounter: 0,
     registers: new Int32Array(REGISTER_COUNT),
     memory: new Int32Array(1 << 16),
+    commands: new Array(1 << 16).map(_ => null),
     isHalted: false,
   };
   updateRegisters();
@@ -449,7 +510,7 @@ function reloadProgram() {
   const labelJumps = [];
   const labelBranches = [];
   const errors = [];
-  program = [];
+  const program = [];
   const lines = sourceCode.value.split('\n');
 
   for (const lineId in lines) {
@@ -474,66 +535,64 @@ function reloadProgram() {
       }
 
       const op = match[1];
-      if (variant.ops[op] === undefined) {
-        // errors.push(`Uknown operator '${op}' of type '${type}' at line ${lineId}`)
-        // break;
+      if (variant.ops.indexOf(op) === -1) {
+        // errors.push(`Unknown operator ${op} of type '${type}' at line ${lineId}`);
         continue;
       }
 
       matchedOnce = true;
 
       const func = variant.ops[op];
-      if (type == 'R') {
-        program.push({
-          exec: () => func(+match[2], +match[3], +match[4]),
-          desc: `${match[1]} x${+match[2]}, x${+match[3]}, x${+match[4]}`,
-        });
-      } else if (type == 'I') {
-        program.push({
-          exec: () => func(+match[2], +match[3], +match[4]),
-          desc: `${match[1]} x${+match[2]}, x${+match[3]}, ${+match[4]}`,
-        });
-      } else if (type == 'S') {
-        program.push({
-          exec: () => func(+match[2], +match[3], +match[4]),
-          desc: `${match[1]} x${+match[2]}, x${+match[3]}, ${+match[4]}`,
-        });
-      } else if (type == 'U') {
-        program.push({
-          exec: () => func(+match[2], +match[3]),
-          desc: `${match[1]} x${+match[2]}, ${+match[3]}`,
-        });
-      } else if (type == 'ULabel') {
-        labelJumps.push({
-          pos: program.length,
-          lineId,
-          func,
-          op: match[1],
-          rd: match[2],
-          label: match[3],
-        });
-        program.push({});
-      } else if (type == 'BLabel') {
-        labelBranches.push({
-          pos: program.length,
-          lineId,
-          func,
-          op: match[1],
-          rs1: match[2],
-          rs2: match[3],
-          label: match[4],
-        });
-        program.push({});
-      } else if (type == 'noArg') {
-        program.push({
-          exec: func,
-          desc: match[1],
-        });
+      switch (type) {
+        case 'R': program.push([match[1], [+match[2], +match[3], +match[4]]]); break;
+        case 'I': program.push([match[1], [+match[2], +match[3], +match[4]]]); break;
+        case 'S': program.push([match[1], [+match[2], +match[3], +match[4]]]); break;
+        case 'U':
+          if (match[1] == 'li') {
+            const imm = +match[3];
+            if (-2048 <= imm && imm < 2048) {
+              program.push(['addi', [+match[2], 0, imm]]);
+            } else {
+              program.push(['lui', [+match[2], (imm >> 12) & 0xFFFFF]]);
+              program.push(['addi', [+match[2], +match[2], imm & 0xFFF]]);
+            }
+          } else {
+            program.push([match[1], [+match[2], +match[3]]]);
+          }
+          break;
+        case 'BLabel':
+          labelBranches.push({
+            pos: program.length,
+            lineId,
+            func,
+            op: match[1],
+            rs1: match[2],
+            rs2: match[3],
+            label: match[4],
+          });
+          program.push({});
+          break;
+        case 'ULabel':
+          labelJumps.push({
+            pos: program.length,
+            lineId,
+            func,
+            op: match[1],
+            rd: match[2],
+            label: match[3]
+          });
+          if (match[1] == 'li') {
+            program.push({});
+          }
+          program.push({});
+          break;
+        case 'noArg': program.push([match[1], []]); break;
+        case 'env1': program.push([match[1], [+match[2]]]); break;
       }
     }
 
     if (!matchedOnce) {
-      errors.push(`Unknown operator format: '${line}' at line ${lineId}`);
+      errors.push(`Unknown operator format: '${line.trim()}' at line ${lineId}`);
     }
   }
 
@@ -542,11 +601,14 @@ function reloadProgram() {
       errors.push(`Unknown label '${lj.label}' at line ${lj.lineId}`);
       continue;
     }
-    const diff = labels[lj.label] - lj.pos;
-    program[lj.pos] = {
-      exec: () => lj.func(lj.rd, diff),
-      desc: `${lj.op} x${lj.rd}, ${diff} # ${lj.label}`
-    };
+    if (lj.op == 'li') {
+      const imm = labels[lj.label];
+      program[lj.pos + 0] = ['lui', [lj.rd, (imm >> 12) & 0xFFFFF]];
+      program[lj.pos + 1] = ['addi', [lj.rd, lj.rd, imm & 0xFFF]];
+    } else {
+      const diff = labels[lj.label] - lj.pos;
+      program[lj.pos] = [lj.op, [lj.rd, diff]];
+    }
   }
 
   for (const lb of labelBranches) {
@@ -555,26 +617,30 @@ function reloadProgram() {
       continue;
     }
     const diff = labels[lb.label] - lb.pos;
-    program[lb.pos] = {
-      exec: () => lb.func(lb.rs1, lb.rs2, diff),
-      desc: `${lb.op} x${lb.rs1}, x${lb.rs2}, ${diff} # ${lb.label}`
-    };
+    program[lb.pos] = [lb.op, [lb.rs1, lb.rs2, diff]];
   }
 
   if (errors.length == 0) {
-    compiledProgram.innerText = program.map((c, i) => `${i}: ${c.desc}`).join('\n');
+    for (const pos in program) {
+      setMem(pos, encodeCommand(program[pos][0], program[pos][1]));
+    }
+    memoryTable.style.display = '';
+    errorList.style.display = 'none';
   } else {
-    compiledProgram.innerText = errors.join('\n');
-    program = [];
+    errorList.innerText = errors.join('\n');
+    memoryTable.style.display = 'none';
+    errorList.style.display = '';
   }
 }
 
 function stepOnce() {
-  if (program[state.programCounter]) {
-    program[state.programCounter++].exec();
+  const cmd = state.commands[state.programCounter++];
+  if (cmd) {
+    cmd.eval();
   } else {
     state.isHalted = true;
   }
+  updateMemoryTable();
   updateRegisters();
 }
 
@@ -596,8 +662,12 @@ function reloadAndRun() {
 
 window.onload = () => {
   sourceCode = document.querySelector('textarea');
-  compiledProgram = document.getElementById('compiledProgram');
+  memoryTable = document.getElementById('memoryTable');
+  memoryTableBody = document.getElementById('memoryTableBody');
+  errorList = document.getElementById('errorList');
   programOutput = document.getElementById('programOutput');
+
+  errorList.style.display = 'none';
 
   sourceCode.value = localStorage.getItem('savedSource');
 
@@ -613,25 +683,66 @@ window.onload = () => {
   table.appendChild(tr);
   registersTable.pc = td;
 
-  for (let i = 0; i < REGISTER_COUNT; i += 4) {
+  for (let i = 0; i < REGISTER_COUNT / 4; ++i) {
     tr = document.createElement('tr');
 
     for (let j = 0; j < 4; ++j) {
       td = document.createElement('td');
-      td.innerText = `x${i + j}`;
+      td.innerText = `x${i + (REGISTER_COUNT / 4) * j}`;
       tr.appendChild(td);
       td = document.createElement('td');
       td.innerText = '0';
       tr.appendChild(td);
-      registersTable[`x${i + j}`] = td;
+      registersTable[`x${i + (REGISTER_COUNT / 4) * j}`] = td;
     }
 
     table.appendChild(tr);
   }
 
   registersPlaceholder.appendChild(table);
+
+  for (let i = 0; i < MEMORY_PAGE_SIZE; ++i) {
+    const row = {
+      tr: document.createElement('tr'),
+      address: document.createElement('td'),
+      hex: document.createElement('td'),
+      decimal: document.createElement('td'),
+      command: document.createElement('td'),
+      explanation: document.createElement('td'),
+    };
+    row.tr.appendChild(row.address);
+    row.tr.appendChild(row.hex);
+    row.tr.appendChild(row.decimal);
+    row.tr.appendChild(row.command);
+    row.tr.appendChild(row.explanation);
+    memoryTableBody.appendChild(row.tr);
+    tablePage.push(row);
+  }
+
+  reloadProgram();
+  updateMemoryTable();
 }
 
 window.onunload = () => {
   localStorage.setItem('savedSource', sourceCode.value);
+}
+
+function firstPage() {
+  tableShift = 0;
+  updateMemoryTable();
+}
+
+function previousPage() {
+  tableShift = Math.max(0, tableShift - MEMORY_PAGE_SIZE);
+  updateMemoryTable();
+}
+
+function nextPage() {
+  tableShift = Math.min(tableShift + MEMORY_PAGE_SIZE, (1 << 16) - MEMORY_PAGE_SIZE);
+  updateMemoryTable();
+}
+
+function lastPage() {
+  tableShift = Math.max(0, (1 << 16) - MEMORY_PAGE_SIZE);
+  updateMemoryTable();
 }

@@ -11,7 +11,35 @@
 <body>
   <main>
     <textarea id="code" placeholder="Source code"></textarea>
-    <output id="compiledProgram"></output>
+    <output id="errorList"></output>
+    <div id="memoryControls">
+      <table id="memoryTable">
+        <thead>
+          <tr>
+            <th>Address</th>
+            <th>Hex</th>
+            <th>Decimal</th>
+            <th>Command</th>
+            <th>Explanation</th>
+          </tr>
+        </thead>
+        <tbody id="memoryTableBody"></tbody>
+        <tfoot>
+          <tr>
+            <th>Address</th>
+            <th>Hex</th>
+            <th>Decimal</th>
+            <th>Command</th>
+            <th>Explanation</th>
+          </tr>
+        </tfoot>
+      </table>
+
+      <button onclick="firstPage()">&lt;&lt;</button>
+      <button onclick="previousPage()">&lt;</button>
+      <button onclick="nextPage()">&gt;</button>
+      <button onclick="lastPage()">&gt;&gt;</button>
+    </div>
     <div id="controlPanel">
       <div>
         <button onclick="clearOutput()">Clear output</button>

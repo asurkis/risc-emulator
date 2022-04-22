@@ -3,7 +3,9 @@ html {
   min-height: 100%;
 }
 
-html, body, main {
+html,
+body,
+main {
   display: grid;
 }
 
@@ -26,17 +28,31 @@ textarea {
   gap: .5em;
 }
 
-#controlPanel > div {
+#controlPanel>div {
   display: grid;
   gap: .5em;
 }
 
-tr:nth-child(even) {
+#registers tr:nth-child(even) {
   background-color: #eee;
 }
 
-td:nth-child(even) {
+#registers td:nth-child(even) {
   min-width: 10ch;
+  text-align: right;
+}
+
+#memoryTableBody tr:nth-child(odd) {
+  background-color: #eee;
+}
+
+#memoryTableBody td:nth-child(1),
+#memoryTableBody td:nth-child(2) {
+  font-family: monospace;
+  text-align: center;
+}
+
+#memoryTableBody td:nth-child(3) {
   text-align: right;
 }
 
