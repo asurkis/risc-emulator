@@ -129,10 +129,10 @@ const lineVariants = {
   },
   I: {
     regex: /^\s*(\w+)\s+x(\d+)\s*,\s*x(\d+)\s*,\s*(-?\d+)\s*(?:#.*)?$/i,
-    ops: ['jalr', 'lw', 'addi']
+    ops: ['jalr', 'lw', 'addi', 'xori']
   },
   S: {
-    regex: /^\s*(\w+)\s+x(\d+)\s*,\s*x(\d+)\s*,\s*(-?\d+)\s*(?:#.*)?$/i,
+    regex: /^\s*(\w+)\s+x(\d+)\s*,\s*(-?\d+)\s*,\s*x(\d+)\s*(?:#.*)?$/i,
     ops: ['sw']
   },
   U: {
@@ -191,6 +191,7 @@ function encodeCommand(op, args) {
     case 'lw': opcode = 0b0000011; funct3 = 0b010; break;
     case 'sw': opcode = 0b0100011; funct3 = 0b010; break;
     case 'addi': opcode = 0b0010011; funct3 = 0b000; break; // , slti, sltiu, xori, ori, andi, slli, srli, srai
+    case 'xori': opcode = 0b0010011; funct3 = 0b100; break;
     case 'add': opcode = 0b0110011; funct3 = 0b000; funct7 = 0b0000000; break;
     case 'sub': opcode = 0b0110011; funct3 = 0b000; funct7 = 0b0100000; break;
     case 'sll': opcode = 0b0110011; funct3 = 0b001; funct7 = 0b0000000; break;
@@ -251,9 +252,9 @@ function encodeCommand(op, args) {
         (imm << 20)
       );
     case 'S':
-      rs1 = args[1] & 31;
-      rs2 = args[0] & 31;
-      imm = (args[2] + 0x800) % 0x1000 - 0x800;
+      rs1 = args[0] & 31;
+      rs2 = args[2] & 31;
+      imm = (args[1] + 0x800) % 0x1000 - 0x800;
       return (
         opcode |
         (funct3 << 12) |
@@ -299,17 +300,41 @@ function encodeCommand(op, args) {
   }
 }
 
-function textRegImm(rs1, imm) {
-  if (rs1 == 0) {
+function textReg(reg) {
+  return reg === 0 ? '0' : `x${reg}`;
+}
+
+function textImm(imm) {
+  return imm < 0 ? `(${imm})` : `${imm}`;
+}
+
+function textAddi(rs1, imm) {
+  if (rs1 === '0') {
     return `${imm}`;
   } else {
     if (imm < 0) {
-      return `x${rs1} - ${-imm}`;
+      return `${rs1} - ${-imm}`;
     } else if (imm > 0) {
-      return `x${rs1} + ${imm}`;
+      return `${rs1} + ${imm}`;
     } else {
-      return `x${rs1}`;
+      return `${rs1}`;
     }
+  }
+}
+
+function textRegImm(rs1, imm, opdesc) {
+  return `${textReg(rs1)} ${opdesc} ${textImm(imm)}`;
+}
+
+function textRegReg(rs1, rs2, opdesc) {
+  return `${textReg(rs1)} ${opdesc} ${textReg(rs2)}`;
+}
+
+function describeAssignment(rd, textExpr) {
+  if (rd === '0') {
+    return '<nop>';
+  } else {
+    return `${rd} := ${textExpr}`;
   }
 }
 
@@ -342,13 +367,13 @@ function decodeCommand(code) {
     case 0b0110111: // lui
       return {
         op: `lui x${rd}, ${immu}`,
-        desc: `x${rd} := ${immu} * 2^12`,
+        desc: describeAssignment(textReg(rd), `${immu} * 2^12`),
         eval: () => { setReg(rd, immu << 12); }
       };
     case 0b0010111: // auipc
       return {
         op: `auipc x${rd}, ${immu}`,
-        desc: `x${rd} := ${immu} * 2^12 + pc`,
+        desc: describeAssignment(rd, `${immu} * 2^12 + pc`),
         eval: () => {
           const pc = state.programCounter;
           setReg(rd, (immu << 12) + pc);
@@ -357,7 +382,7 @@ function decodeCommand(code) {
     case 0b1101111: // jal
       return {
         op: `jal x${rd}, ${immus}`,
-        desc: `x${rd} := pc; pc := pc + ${immus}`,
+        desc: (rd == 0 ? '' : `x${rd} := pc; `) + describeAssignment('pc', textAddi('pc', immus)),
         eval: () => {
           setReg(rd, state.programCounter);
           shiftPC(immus);
@@ -369,7 +394,7 @@ function decodeCommand(code) {
       }
       return {
         op: `jalr x${rd}, x${rs1}, ${immis}`,
-        desc: `x${rd} := pc; pc := x${rs1} ${immis < 0 ? '-' : '+'} ${Math.abs(immis)}`,
+        desc: (rd == 0 ? '' : `x${rd} := pc; `) + describeAssignment('pc', textAddi(rs1, immis)),
         eval: () => {
           const a = getReg(rs1);
           setReg(rd, state.programCounter);
@@ -386,7 +411,7 @@ function decodeCommand(code) {
       }
       return {
         op: `b${op} x${rs1}, x${rs2}, ${immbi}`,
-        desc: `if x${rs1} ${opdesc} x${rs2} then pc := pc ${immbi < 0 ? '-' : '+'} ${Math.abs(immbi)}`,
+        desc: `if x${rs1} ${opdesc} x${rs2} then ${describeAssignment('pc', textAddi('pc', immbi))}`,
         eval: () => {
           const a = getReg(rs1);
           const b = getReg(rs2);
@@ -401,21 +426,7 @@ function decodeCommand(code) {
       }
       return {
         op: `lw x${rd}, x${rs1}, ${immis}`,
-        desc: (() => {
-          if (rd == 0) {
-            return '<no effect>';
-          } else if (rs1 == 0) {
-            return `x${rd} := [${immis}]`;
-          } else {
-            if (immis < 0) {
-              return `x${rd} := [x${rs1} - ${-immis}]`;
-            } else if (immis > 0) {
-              return `x${rd} := [x${rs1} + ${immis}]`;
-            } else {
-              return `x${rd} := [x${rs1}]`;
-            }
-          }
-        })(),
+        desc: describeAssignment(textReg(rd), `[${textAddi(textReg(rs1), immis)}]`),
         eval: () => {
           const a = getReg(rs1);
           setReg(rd, getMem(a + immis));
@@ -427,7 +438,7 @@ function decodeCommand(code) {
       }
       return {
         op: `sw x${rs1}, x${rs2}, ${immss}`,
-        desc: `[x${rs1} + ${immss}] := x${rs2}`,
+        desc: `[${textAddi(textReg(rs1), immss)}] := x${rs2}`,
         eval: () => {
           const a = getReg(rs1);
           const b = getReg(rs2);
@@ -438,14 +449,15 @@ function decodeCommand(code) {
       switch (funct3) {
         case 0b000: op = 'add'; opdesc = '+'; break;
         // case 0b010: op = 'slt'; opdesc = '<'; break;
-        // case 0b100: op =
+        case 0b100: op = 'xor'; opdesc = 'xor'; break;
       }
+      console.log(rd, textReg(rd), textRegImm(rd, immis, opdesc));
       return {
         op: `${op}i x${rd}, x${rs1}, ${immis}`,
-        desc: `x${rd} := x${rs1} ${opdesc} (${immis})`,
+        desc: describeAssignment(textReg(rd), textRegImm(rs1, immis, opdesc)),
         eval: () => {
           const a = getReg(rs1);
-          setReg(rd, a + immis);
+          setReg(rd, arithmetics[op](a, immis));
         }
       };
     case 0b0110011: // add, sub, sll, slt, sltu, xor, srl, sra, or, and, mul, div, rem
@@ -468,7 +480,7 @@ function decodeCommand(code) {
       }
       return {
         op: `${op} x${rd}, x${rs1}, x${rs2}`,
-        desc: `x${rd} := x${rs1} ${opdesc} x${rs2}`,
+        desc: describeAssignment(textReg(rd), textRegReg(rs1, rs2, opdesc)),
         eval: () => {
           const a = getReg(rs1);
           const b = getReg(rs2);
