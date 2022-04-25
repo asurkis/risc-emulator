@@ -3,6 +3,7 @@
 const REGISTER_ADDRESS_BITS = 5;
 const MEMORY_PAGE_SIZE = 16;
 const REGISTER_COUNT = 1 << REGISTER_ADDRESS_BITS;
+const MEMORY_SIZE = 1 << 16;
 
 const registersTable = {};
 let sourceCode;
@@ -14,7 +15,13 @@ let programOutput;
 let tableShift = 0;
 const tablePage = [];
 
-let state;
+const state = {
+  programCounter: 0,
+  registers: new Int32Array(REGISTER_COUNT),
+  memory: new Int32Array(1 << 16),
+  commands: new Array(1 << 16).map(_ => null),
+  isHalted: false,
+};
 
 function clearOutput() {
   programOutput.innerText = '';
@@ -451,7 +458,6 @@ function decodeCommand(code) {
         // case 0b010: op = 'slt'; opdesc = '<'; break;
         case 0b100: op = 'xor'; opdesc = 'xor'; break;
       }
-      console.log(rd, textReg(rd), textRegImm(rd, immis, opdesc));
       return {
         op: `${op}i x${rd}, x${rs1}, ${immis}`,
         desc: describeAssignment(textReg(rd), textRegImm(rs1, immis, opdesc)),
@@ -516,13 +522,15 @@ function decodeCommand(code) {
 }
 
 function reloadProgram() {
-  state = {
-    programCounter: 0,
-    registers: new Int32Array(REGISTER_COUNT),
-    memory: new Int32Array(1 << 16),
-    commands: new Array(1 << 16).map(_ => null),
-    isHalted: false,
-  };
+  state.programCounter = 0;
+  state.registers = new Int32Array(REGISTER_COUNT);
+  for (let i = 0; i < REGISTER_COUNT; ++i) {
+    setReg(i, 0);
+  }
+  for (let i = 0; i < MEMORY_SIZE; ++i) {
+    setMem(i, 0);
+  }
+  state.isHalted = true;
 
   const labels = {};
   const labelJumps = [];
@@ -758,22 +766,26 @@ window.onunload = () => {
   localStorage.setItem('savedSource', sourceCode.value);
 }
 
+function clampMem(addr) {
+  return Math.max(0, Math.min(addr, MEMORY_SIZE - MEMORY_PAGE_SIZE));
+}
+
 function firstPage() {
-  tableShift = 0;
+  tableShift = clampMem(0);
   updateMemoryTable();
 }
 
 function previousPage() {
-  tableShift = Math.max(0, tableShift - MEMORY_PAGE_SIZE);
+  tableShift = clampMem(tableShift - MEMORY_PAGE_SIZE);
   updateMemoryTable();
 }
 
 function nextPage() {
-  tableShift = Math.min(tableShift + MEMORY_PAGE_SIZE, (1 << 16) - MEMORY_PAGE_SIZE);
+  tableShift = clampMem(tableShift + MEMORY_PAGE_SIZE);
   updateMemoryTable();
 }
 
 function lastPage() {
-  tableShift = Math.max(0, (1 << 16) - MEMORY_PAGE_SIZE);
+  tableShift = clampMem(MEMORY_SIZE);
   updateMemoryTable();
 }
