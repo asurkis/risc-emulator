@@ -600,8 +600,11 @@ function reloadProgram() {
             if (-2048 <= imm && imm < 2048) {
               program.push(['addi', [+match[2], 0, imm]]);
             } else {
-              program.push(['lui', [+match[2], (imm & 0xFFFFF000) >> 12]]);
-              program.push(['addi', [+match[2], +match[2], imm % 0x1000]]);
+              const low = imm & 0xFFF;
+              const lows = ((low + 0x800) % 0x1000) - 0x800;
+              const high = ((imm - lows) >> 12) & 0xFFFFF;
+              program.push(['lui', [+match[2], high]])
+              program.push(['addi', [+match[2], +match[2], lows]]);
             }
           } else {
             program.push([match[1], [+match[2], +match[3]]]);
