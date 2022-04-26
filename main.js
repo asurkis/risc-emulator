@@ -10,6 +10,7 @@ let sourceCode;
 let memoryTable;
 let memoryTableBody;
 let errorList;
+let programInput;
 let programOutput;
 
 let tableShift = 0;
@@ -20,6 +21,7 @@ const state = {
   registers: new Int32Array(REGISTER_COUNT),
   memory: new Int32Array(1 << 16),
   commands: new Array(1 << 16).map(_ => null),
+  readPos: 0,
   isHalted: false,
 };
 
@@ -502,19 +504,27 @@ function decodeCommand(code) {
             eval: () => {
               state.isHalted = true;
             }
-          }
+          };
         case 2: // eread
-          // case 'eread':
-          //   rd = args[0] & 31;
-          //   return opcode | (rd << 7) | (2 << 20);
-          break;
+          return {
+            op: 'eread ' + textReg(rd),
+            desc: 'READ ' + textReg(rd),
+            eval: () => {
+              const input = programInput.value;
+              if (state.readPos >= input.length) {
+                setReg(rd, 0);
+              } else {
+                setReg(rd, input.charCodeAt(state.readPos++));
+              }
+            }
+          };
         case 4: // ewrite
         case 'ewrite':
           return {
-            op: `ewrite x${rs1}`,
-            desc: `WRITE x${rs1}`,
+            op: 'ewrite ' + textReg(rs1),
+            desc: 'WRITE ' + textReg(rs1),
             eval: () => { programOutput.innerText += String.fromCharCode(getReg(rs1)); }
-          }
+          };
       }
       break;
   }
@@ -530,6 +540,7 @@ function reloadProgram() {
   for (let i = 0; i < MEMORY_SIZE; ++i) {
     setMem(i, 0);
   }
+  state.readPos = 0;
   state.isHalted = true;
 
   const labels = {};
@@ -683,11 +694,14 @@ function stepOnce() {
   updateRegisters();
 }
 
-function runProgram() {
+function stepIfNotHalted() {
   if (!state.isHalted) {
     stepOnce();
-    setTimeout(runProgram);
   }
+}
+
+function runProgram() {
+  state.isHalted = false;
 }
 
 function stopProgram() {
@@ -700,10 +714,11 @@ function reloadAndRun() {
 }
 
 window.onload = () => {
-  sourceCode = document.querySelector('textarea');
+  sourceCode = document.getElementById('code');
   memoryTable = document.getElementById('memoryTable');
   memoryTableBody = document.getElementById('memoryTableBody');
   errorList = document.getElementById('errorList');
+  programInput = document.getElementById('programInput');
   programOutput = document.getElementById('programOutput');
 
   errorList.style.display = 'none';
@@ -760,6 +775,7 @@ window.onload = () => {
 
   reloadProgram();
   updateMemoryTable();
+  setInterval(stepIfNotHalted, 0);
 }
 
 window.onunload = () => {
