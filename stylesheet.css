@@ -90,5 +90,10 @@ td {
 }
 
 button {
-  padding: .5em;
+  padding: 0.5em;
+}
+
+#memoryTable button {
+  margin-left: .5em;
+  margin-right: .5em;
 }
