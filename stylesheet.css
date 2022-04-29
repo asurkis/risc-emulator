@@ -10,14 +10,14 @@ main {
 }
 
 main {
-  grid-template: 2fr 1fr 1fr / auto 1fr 1fr;
+  grid-template: 3fr 1fr 1fr / auto 1fr 1fr;
   gap: .5em;
 }
 
-#programOutput:empty::after {
+/* #programOutput:empty::after {
   color: #777;
   content: 'Program output will be here';
-}
+} */
 
 textarea {
   resize: none;

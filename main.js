@@ -26,7 +26,7 @@ const state = {
 };
 
 function clearOutput() {
-  programOutput.innerText = '';
+  programOutput.value = '';
 }
 
 function getReg(addr) {
@@ -524,7 +524,7 @@ function decodeCommand(code) {
           return {
             op: 'ewrite ' + textReg(rs1),
             desc: 'WRITE ' + textReg(rs1),
-            eval: () => { programOutput.innerText += String.fromCharCode(getReg(rs1)); }
+            eval: () => { programOutput.value += String.fromCharCode(getReg(rs1)); }
           };
       }
       break;
