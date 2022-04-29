@@ -43,7 +43,6 @@
     </div>
     <div id="controlPanel">
       <div>
-        <button onclick="clearOutput()">Clear output</button>
         <button onclick="reloadProgram()">Reload</button>
         <button onclick="stepOnce()">Step once</button>
         <button onclick="runProgram()">Run</button>
@@ -52,6 +51,9 @@
       </div>
     </div>
     <textarea id="programInput" placeholder="Program input"></textarea>
+    <div>
+      <button onclick="clearOutput()">Clear output</button>
+    </div>
     <output id="programOutput"></output>
     <output id="registers"></output>
   </main>

@@ -698,14 +698,23 @@ function stepOnce() {
   updateRegisters();
 }
 
+let programTimer = null;
+
 function stepIfNotHalted() {
   if (!state.isHalted) {
     stepOnce();
+  } else {
+    clearInterval(programTimer);
+    programTimer = null;
   }
 }
 
 function runProgram() {
+  if (programTimer !== null) {
+    clearInterval(programTimer);
+  }
   state.isHalted = false;
+  programTimer = setInterval(stepIfNotHalted, 0);
 }
 
 function stopProgram() {
@@ -779,7 +788,6 @@ window.onload = () => {
 
   reloadProgram();
   updateMemoryTable();
-  setInterval(stepIfNotHalted, 0);
 }
 
 window.onunload = () => {
