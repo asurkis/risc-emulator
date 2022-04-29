@@ -30,7 +30,7 @@ function clearOutput() {
 }
 
 function getReg(addr) {
-  return addr == 0 ? 0 : state.registers[addr];
+  return addr === 0 ? 0 : state.registers[addr];
 }
 
 function setReg(addr, val) {
@@ -47,13 +47,14 @@ function getHex(val, digits) {
   }
   let result = '';
   const mod = hex.length % 4;
-  if (mod != 0) {
-    result += ' ' + hex.slice(0, mod);
+  const sep = '&nbsp;';
+  if (mod !== 0) {
+    result += sep + hex.slice(0, mod);
   }
   for (i = mod; i < hex.length; i += 4) {
-    result += ' ' + hex.slice(i, i + 4);
+    result += sep + hex.slice(i, i + 4);
   }
-  return result;
+  return result.slice(sep.length);
 }
 
 function updateMemoryTable() {
@@ -61,11 +62,11 @@ function updateMemoryTable() {
     const addr = i + tableShift;
     const val = getMem(addr);
     const row = tablePage[i];
-    row.address.innerText = getHex(addr, 4);
-    row.hex.innerText = getHex(val, 8);
+    row.address.innerHTML = getHex(addr, 4);
+    row.hex.innerHTML = getHex(val, 8);
     row.decimal.innerText = '' + val;
 
-    if (addr == state.programCounter) {
+    if (addr === state.programCounter) {
       row.tr.style.backgroundColor = '#bfb';
     } else {
       row.tr.style.backgroundColor = '';
@@ -114,14 +115,14 @@ const arithmetics = {
   rem: (a, b) => a % b,
   // remu: (a, b) => a + b,
   // lt: (a, b) => a < b ? 1 : 0,
-  sne: (a, b) => a != b ? 1 : 0,
-  seq: (a, b) => a == b ? 1 : 0,
+  sne: (a, b) => a !== b ? 1 : 0,
+  seq: (a, b) => a === b ? 1 : 0,
   sge: (a, b) => a >= b ? 1 : 0,
 };
 
 const branching = {
-  eq: (a, b) => a == b,
-  ne: (a, b) => a != b,
+  eq: (a, b) => a === b,
+  ne: (a, b) => a !== b,
   lt: (a, b) => a < b,
   // ltu: (a, b) => { },
   ge: (a, b) => a >= b,
@@ -183,7 +184,7 @@ function updateRegisters() {
 }
 
 function encodeCommand(op, args) {
-  if (op == 'data') {
+  if (op === 'data') {
     return args[0];
   }
 
@@ -391,7 +392,7 @@ function decodeCommand(code) {
     case 0b1101111: // jal
       return {
         op: `jal x${rd}, ${immus}`,
-        desc: (rd == 0 ? '' : `x${rd} := pc; `) + describeAssignment('pc', textAddi('pc', immus)),
+        desc: (rd === 0 ? '' : `x${rd} := pc; `) + describeAssignment('pc', textAddi('pc', immus)),
         eval: () => {
           setReg(rd, state.programCounter);
           shiftPC(immus);
@@ -403,7 +404,7 @@ function decodeCommand(code) {
       }
       return {
         op: `jalr x${rd}, x${rs1}, ${immis}`,
-        desc: (rd == 0 ? '' : `x${rd} := pc; `) + describeAssignment('pc', textAddi(rs1, immis)),
+        desc: (rd === 0 ? '' : `x${rd} := pc; `) + describeAssignment('pc', textAddi(rs1, immis)),
         eval: () => {
           const a = getReg(rs1);
           setReg(rd, state.programCounter);
@@ -560,18 +561,18 @@ function reloadProgram() {
         continue;
       }
 
-      if (type == 'empty') {
+      if (type === 'empty') {
         matchedOnce = true;
         break;
       }
 
-      if (type == 'label') {
+      if (type === 'label') {
         matchedOnce = true;
         labels[match[1]] = program.length;
         break;
       }
 
-      if (type == 'data') {
+      if (type === 'data') {
         matchedOnce = true;
         const val = +match[1];
         const n = +match[2];
@@ -595,7 +596,7 @@ function reloadProgram() {
         case 'I': program.push([match[1], [+match[2], +match[3], +match[4]]]); break;
         case 'S': program.push([match[1], [+match[2], +match[3], +match[4]]]); break;
         case 'U':
-          if (match[1] == 'li') {
+          if (match[1] === 'li') {
             const imm = +match[3];
             if (-2048 <= imm && imm < 2048) {
               program.push(['addi', [+match[2], 0, imm]]);
@@ -631,7 +632,7 @@ function reloadProgram() {
             rd: match[2],
             label: match[3]
           });
-          if (match[1] == 'li') {
+          if (match[1] === 'li') {
             program.push({});
           }
           program.push({});
@@ -651,7 +652,7 @@ function reloadProgram() {
       errors.push(`Unknown label '${lj.label}' at line ${lj.lineId}`);
       continue;
     }
-    if (lj.op == 'li') {
+    if (lj.op === 'li') {
       const imm = labels[lj.label];
       program[lj.pos + 0] = ['lui', [lj.rd, (imm >> 12) & 0xFFFFF]];
       program[lj.pos + 1] = ['addi', [lj.rd, lj.rd, imm & 0xFFF]];
@@ -670,7 +671,7 @@ function reloadProgram() {
     program[lb.pos] = [lb.op, [lb.rs1, lb.rs2, diff]];
   }
 
-  if (errors.length == 0) {
+  if (errors.length === 0) {
     for (const pos in program) {
       setMem(pos, encodeCommand(program[pos][0], program[pos][1]));
     }

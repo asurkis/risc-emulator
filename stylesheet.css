@@ -47,6 +47,33 @@ textarea {
   text-align: right;
 }
 
+td {
+  padding-left: 6px;
+  padding-right: 6px;
+}
+
+#memoryTable {
+  display: grid;
+  grid-template: 1fr auto / auto auto 1fr auto auto;
+}
+
+#memoryTable table {
+  grid-column: 1/6;
+  table-layout: fixed;
+}
+
+#memoryTable table tr {
+  width: 100%;
+}
+
+#memoryTable table td:nth-child(3) {
+  width: 6rem;
+}
+
+#memoryTable table td:nth-child(4) {
+  width: 10rem;
+}
+
 #memoryTableBody tr:nth-child(odd) {
   background-color: #eee;
 }
@@ -55,6 +82,7 @@ textarea {
 #memoryTableBody td:nth-child(2) {
   font-family: monospace;
   text-align: center;
+  width: 1%;
 }
 
 #memoryTableBody td:nth-child(3) {
