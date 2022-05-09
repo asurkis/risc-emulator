@@ -93,7 +93,7 @@ function setMem(addr, val) {
 }
 
 function shiftPC(val) {
-  state.programCounter += val - 1;
+  state.programCounter += val;
 }
 
 const arithmetics = {
@@ -139,7 +139,7 @@ const lineVariants = {
   },
   I: {
     regex: /^\s*(\w+)\s+x(\d+)\s*,\s*x(\d+)\s*,\s*(-?\d+)\s*(?:#.*)?$/i,
-    ops: ['jalr', 'lw', 'addi', 'xori']
+    ops: ['jalr', 'lw', 'addi', 'xori', 'beq', 'bne', 'blt', 'bge']
   },
   S: {
     regex: /^\s*(\w+)\s+x(\d+)\s*,\s*(-?\d+)\s*,\s*x(\d+)\s*(?:#.*)?$/i,
@@ -147,7 +147,7 @@ const lineVariants = {
   },
   U: {
     regex: /^\s*(\w+)\s+x(\d+)\s*,\s*(-?\d+)\s*(?:#.*)?$/i,
-    ops: ['li', 'lui', 'auipc', 'jal']
+    ops: ['li', 'lui', /* 'auipc', */ 'jal']
   },
   BLabel: {
     regex: /^\s*(\w+)\s+x(\d+)\s*,\s*x(\d+)\s*,\s*([a-z_]\w*)\s*(?:#.*)?$/i,
@@ -191,7 +191,7 @@ function encodeCommand(op, args) {
   let type, opcode, rd, rs1, rs2, imm, funct3, funct7;
   switch (op) {
     case 'lui': opcode = 0b0110111; break;
-    case 'auipc': opcode = 0b0010111; break;
+    // case 'auipc': opcode = 0b0010111; break;
     case 'jal': opcode = 0b1101111; break;
     case 'jalr': opcode = 0b1100111; funct3 = 0b000; break;
     case 'beq': opcode = 0b1100011; funct3 = 0b000; break;
@@ -380,15 +380,15 @@ function decodeCommand(code) {
         desc: describeAssignment(textReg(rd), `${immu} * 2^12`),
         eval: () => { setReg(rd, immu << 12); }
       };
-    case 0b0010111: // auipc
-      return {
-        op: `auipc x${rd}, ${immu}`,
-        desc: describeAssignment(rd, `${immu} * 2^12 + pc`),
-        eval: () => {
-          const pc = state.programCounter;
-          setReg(rd, (immu << 12) + pc);
-        }
-      };
+    // case 0b0010111: // auipc
+    //   return {
+    //     op: `auipc x${rd}, ${immu}`,
+    //     desc: describeAssignment(rd, `${immu} * 2^12 + pc`),
+    //     eval: () => {
+    //       const pc = state.programCounter;
+    //       setReg(rd, (immu << 12) + pc);
+    //     }
+    //   };
     case 0b1101111: // jal
       return {
         op: `jal x${rd}, ${immus}`,
@@ -604,8 +604,10 @@ function reloadProgram() {
               const low = imm & 0xFFF;
               const lows = ((low + 0x800) % 0x1000) - 0x800;
               const high = ((imm - lows) >> 12) & 0xFFFFF;
-              program.push(['lui', [+match[2], high]])
-              program.push(['addi', [+match[2], +match[2], lows]]);
+              program.push(['lui', [+match[2], high]]);
+              if (lows != 0) {
+                program.push(['addi', [+match[2], +match[2], lows]]);
+              }
             }
           } else {
             program.push([match[1], [+match[2], +match[3]]]);
@@ -657,7 +659,7 @@ function reloadProgram() {
       program[lj.pos + 0] = ['lui', [lj.rd, (imm >> 12) & 0xFFFFF]];
       program[lj.pos + 1] = ['addi', [lj.rd, lj.rd, imm & 0xFFF]];
     } else {
-      const diff = labels[lj.label] - lj.pos;
+      const diff = labels[lj.label] - lj.pos - 1;
       program[lj.pos] = [lj.op, [lj.rd, diff]];
     }
   }
@@ -667,7 +669,7 @@ function reloadProgram() {
       errors.push(`Unknown label '${lb.label}' at line ${lb.lineId}`);
       continue;
     }
-    const diff = labels[lb.label] - lb.pos;
+    const diff = labels[lb.label] - lb.pos - 1;
     program[lb.pos] = [lb.op, [lb.rs1, lb.rs2, diff]];
   }
 
