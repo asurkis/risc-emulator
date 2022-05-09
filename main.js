@@ -96,6 +96,12 @@ function shiftPC(val) {
   state.programCounter += val;
 }
 
+function signExtend(val, bits) {
+  const mid = 1 << (bits - 1);
+  const high = mid << 1;
+  return (val + mid) % high - mid;
+}
+
 const arithmetics = {
   add: (a, b) => a + b,
   sub: (a, b) => a - b,
@@ -107,14 +113,8 @@ const arithmetics = {
   srl: (a, b) => a >> b,
   sra: (a, b) => a >>> b,
   mul: (a, b) => a * b,
-  // mulh: (a, b) => a * b,
-  // mulhu: (a, b) => a * b,
-  // mulhsu: (a, b) => a * b,
   div: (a, b) => a / b,
-  // divu: (a, b) => a + b,
   rem: (a, b) => a % b,
-  // remu: (a, b) => a + b,
-  // lt: (a, b) => a < b ? 1 : 0,
   sne: (a, b) => a !== b ? 1 : 0,
   seq: (a, b) => a === b ? 1 : 0,
   sge: (a, b) => a >= b ? 1 : 0,
@@ -124,9 +124,7 @@ const branching = {
   eq: (a, b) => a === b,
   ne: (a, b) => a !== b,
   lt: (a, b) => a < b,
-  // ltu: (a, b) => { },
   ge: (a, b) => a >= b,
-  // geu: (a, b) => { },
 }
 
 const lineVariants = {
@@ -191,7 +189,6 @@ function encodeCommand(op, args) {
   let type, opcode, rd, rs1, rs2, imm, funct3, funct7;
   switch (op) {
     case 'lui': opcode = 0b0110111; break;
-    // case 'auipc': opcode = 0b0010111; break;
     case 'jal': opcode = 0b1101111; break;
     case 'jalr': opcode = 0b1100111; funct3 = 0b000; break;
     case 'beq': opcode = 0b1100011; funct3 = 0b000; break;
@@ -253,7 +250,7 @@ function encodeCommand(op, args) {
     case 'I':
       rd = args[0] & 31;
       rs1 = args[1] & 31;
-      imm = (args[2] + 0x800) % 0x1000 - 0x800;
+      imm = signExtend(args[2], 12);
       return (
         opcode |
         (funct3 << 12) |
@@ -264,7 +261,7 @@ function encodeCommand(op, args) {
     case 'S':
       rs1 = args[0] & 31;
       rs2 = args[2] & 31;
-      imm = (args[1] + 0x800) % 0x1000 - 0x800;
+      imm = signExtend(args[1], 12);
       return (
         opcode |
         (funct3 << 12) |
@@ -276,7 +273,7 @@ function encodeCommand(op, args) {
     case 'B':
       rs1 = args[0] & 31;
       rs2 = args[1] & 31;
-      imm = (args[2] + 0x800) % 0x1000 - 0x800;
+      imm = signExtend(args[2], 12);
       return (
         opcode |
         (funct3 << 12) |
@@ -295,7 +292,6 @@ function encodeCommand(op, args) {
         (rd << 7) |
         (imm << 12)
       );
-    // case 'J': break;
     case 'E':
       switch (op) {
         case 'ebreak':
@@ -352,22 +348,19 @@ function decodeCommand(code) {
   const funct3 = (code >> 12) & 7;
   const funct7 = (code >> 25) & 127;
   const immu = (code >> 12) & 0xFFFFF;
-  const immus = (immu + 0x80000) % 0x100000 - 0x80000;
+  const immus = signExtend(immu, 20);
   const immi = (code >> 20) & 0xFFF;
-  // 0x000 => 0x0800 => 0x800 => 0
-  // 0x7FF => 0x0FFF => 0xFFF => 0x7FF
-  // 0x800 => 0x1000 => 0x000 => -0x800
-  const immis = (immi + 0x800) % 0x1000 - 0x800;
+  const immis = signExtend(immi, 12);
   const imms =
     (((code >> 7) & 31) << 0) |
     (((code >> 25) & 127) << 5);
-  const immss = (imms + 0x800) % 0x1000 - 0x800;
+  const immss = signExtend(imms, 12);
   const immb =
     (((code >> 7) & 1) << 10) |
     (((code >> 8) & 15) << 0) |
     (((code >> 25) & 63) << 4) |
     (((code >> 31) & 1) << 11);
-  const immbi = (immb + 0x800) % 0x1000 - 0x800;
+  const immbi = signExtend(immb, 12);
   const rd = (code >> 7) & 31;
   const rs1 = (code >> 15) & 31;
   const rs2 = (code >> 20) & 31;
@@ -602,7 +595,7 @@ function reloadProgram() {
               program.push(['addi', [+match[2], 0, imm]]);
             } else {
               const low = imm & 0xFFF;
-              const lows = ((low + 0x800) % 0x1000) - 0x800;
+              const lows = signExtend(low, 12);
               const high = ((imm - lows) >> 12) & 0xFFFFF;
               program.push(['lui', [+match[2], high]]);
               if (lows != 0) {
