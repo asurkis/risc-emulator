@@ -112,7 +112,15 @@ const arithmetics = {
   sll: (a, b) => a << b,
   srl: (a, b) => a >> b,
   sra: (a, b) => a >>> b,
-  mul: (a, b) => a * b,
+  mul: (a, b) => {
+    const al = a & 0xFFFF;
+    const ah = (a >>> 16) & 0xFFFF;
+    const bl = b & 0xFFFF;
+    const bh = (b >>> 16) & 0xFFFF;
+    const cl = al * bl;
+    const ch = al * bh + bl * ah;
+    return cl + (ch << 16);
+  },
   div: (a, b) => a / b,
   rem: (a, b) => a % b,
   sne: (a, b) => a !== b ? 1 : 0,
