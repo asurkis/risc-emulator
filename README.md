@@ -60,7 +60,7 @@
 | `beq rs1, rs2, imm[12]` | если rs1 = rs2, то pc := pc + imm |
 | `bne rs1, rs2, imm[12]` | если rs1 &ne; rs2, то pc := pc + imm |
 | `blt rs1, rs2, imm[12]` | если rs1 < rs2, то pc := pc + imm |
-| `bge rs1, rs2, imm[12]` | если rs1 \> rs2, то pc := pc + imm |
+| `bge rs1, rs2, imm[12]` | если rs1 &geq; rs2, то pc := pc + imm |
 | `ebreak` | установить флаг останова |
 | `eread rd` | прочитать символ Unicode из поля ввода в rd |
 | `ewrite rs1` | вывести символ Unicode из rs1 в поле вывода |
