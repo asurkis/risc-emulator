@@ -51,7 +51,7 @@ Load:
 - lw rd, rs1, imm
 
 Store:
-- sw rs1, rs2, imm
+- sw rs1, imm, rs2
 
 Multiplication:
 - mul    rd, rs1, rs2

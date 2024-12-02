@@ -13,7 +13,7 @@ producer_loop:
   div x15, x12, x10
   rem x16, x12, x10
   addi x31, x16, 48
-  sw x31, x14, 0
+  sw x14, 0, x31
   addi x14, x14, -1
   addi x12, x15, 0
   bne x12, x0, producer_loop

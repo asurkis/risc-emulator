@@ -448,7 +448,7 @@ function decodeCommand(code) {
         return null;
       }
       return {
-        op: `sw x${rs1}, x${rs2}, ${immss}`,
+        op: `sw x${rs1}, ${immss}, x${rs2}`,
         desc: `[${textAddi(textReg(rs1), immss)}] := x${rs2}`,
         eval: () => {
           const a = getReg(rs1);
