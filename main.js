@@ -657,8 +657,13 @@ function reloadProgram() {
     }
     if (lj.op === 'li') {
       const imm = labels[lj.label];
-      program[lj.pos + 0] = ['lui', [lj.rd, (imm >> 12) & 0xFFFFF]];
-      program[lj.pos + 1] = ['addi', [lj.rd, lj.rd, imm & 0xFFF]];
+      // Code is duplicated from `li` with integers,
+      // however, it is cleaner than putting it into a function
+      const low = imm & 0xFFF;
+      const lows = signExtend(low, 12);
+      const high = ((imm - lows) >> 12) & 0xFFFFF;
+      program[lj.pos + 0] = ['lui', [lj.rd, high]];
+      program[lj.pos + 1] = ['addi', [lj.rd, lj.rd, lows]];
     } else {
       const diff = labels[lj.label] - lj.pos - 1;
       program[lj.pos] = [lj.op, [lj.rd, diff]];
