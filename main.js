@@ -602,13 +602,10 @@ function reloadProgram() {
             if (-2048 <= imm && imm < 2048) {
               program.push(['addi', [+match[2], 0, imm]]);
             } else {
-              const low = imm & 0xFFF;
-              const lows = signExtend(low, 12);
-              const high = ((imm - lows) >> 12) & 0xFFFFF;
-              program.push(['lui', [+match[2], high]]);
-              if (lows != 0) {
-                program.push(['addi', [+match[2], +match[2], lows]]);
-              }
+              program.push(['jal', [+match[2], 0]]);
+              program.push(['lw', [+match[2], +match[2], 2]]);
+              program.push(['jal', [0, 1]]);
+              program.push(['data', [imm]]);
             }
           } else {
             program.push([match[1], [+match[2], +match[3]]]);
